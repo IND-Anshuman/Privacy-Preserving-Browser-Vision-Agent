@@ -18,6 +18,11 @@
     "bench:python": "python ../bench/run_metrics.py"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

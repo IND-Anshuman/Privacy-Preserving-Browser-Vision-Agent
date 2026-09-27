@@ -293,7 +293,9 @@ export function parseOrThrow<T extends z.ZodTypeAny>(schema: T, data: unknown, w
   const res = schema.safeParse(data)
   if (!res.success) {
     const first = res.error.issues[0]
-    throw new Error(`[schema:${where}] ${first.path.join('.') || '<root>'}: ${first.message}`)
+    throw new Error(
+      `[schema:${where}] ${first?.path.join('.') || '<root>'}: ${first?.message ?? 'validation failed'}`,
+    )
   }
   return res.data
 }

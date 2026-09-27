@@ -163,7 +163,7 @@ describe('schema: request envelope', () => {
 
   it('does not let a sensitive value ride in screen_state', () => {
     // The schema carries valueClass, not the secret. Assert the shape forces it.
-    const node = screenState.root.children[1]!
+    const node = (screenState.root.children as Array<{ valueClass?: string; value?: string }>)[1]!
     expect(node.valueClass).toBe('sensitive')
     expect(node.value).toBeUndefined()
     expect(REDACTED_PASSWORD).toBe('<redacted:password>')

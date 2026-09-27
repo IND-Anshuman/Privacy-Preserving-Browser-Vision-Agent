@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Veil</title>
+    <style>
+      /* User-facing copy never exposes internals: no "redaction pipeline",
+         no "L2 NER", no "gate". Just what the user gets. */
+      :root {
+        --bg: #f8fafc;
+        --fg: #0f172a;
+        --muted: #64748b;
+        --line: #e2e8f0;
+        --brand: #0f766e;
+        --ok: #15803d;
+        --warn: #b45309;
+        --err: #b91c1c;
+        --card: #ffffff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      header {
+        background: var(--brand);
+        color: #fff;
+        padding: 14px 16px;
+      }
+      header h1 { margin: 0; font-size: 16px; letter-spacing: .2px; }
+      header p { margin: 2px 0 0; font-size: 12px; opacity: .9; }
+      main { padding: 12px; display: grid; gap: 12px; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .card h2 {
+        margin: 0 0 8px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: .6px;
+        color: var(--muted);
+      }
+      textarea {
+        width: 100%;
+        min-height: 64px;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font: inherit;
+        resize: vertical;
+      }
+      .row { display: flex; gap: 8px; margin-top: 8px; }
+      button {
+        flex: 1;
+        padding: 9px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--brand);
+        background: var(--brand);
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.ghost { background: #fff; color: var(--brand); }
+      .big { font-size: 20px; font-weight: 700; }
+      .ok { color: var(--ok); }
+      .warn { color: var(--warn); }
+      .err { color: var(--err); }
+      .muted { color: var(--muted); font-size: 12px; }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #d1fae5;
+        color: #065f46;
+        font-size: 11px;
+        font-weight: 600;
+        margin-right: 6px;
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      td { padding: 3px 0; vertical-align: top; }
+      td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+      .waterfall { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #e2e8f0; }
+      .waterfall span { display: block; height: 100%; }
+      .log { max-height: 160px; overflow: auto; font: 11px/1.5 ui-monospace, monospace; }
+      .log div { padding: 1px 0; border-bottom: 1px solid #f1f5f9; }
+      .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+      .legend i {
+        width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Veil</h1>
+      <p id="tagline">Your screen is read on this device. Nothing sensitive leaves.</p>
+    </header>
+    <main>
+      <section class="card">
+        <h2>Ask about this page</h2>
+        <textarea id="intent" placeholder="e.g. fill the non-sensitive fields and click Submit"></textarea>
+        <div class="row">
+          <button id="run">Act on it</button>
+          <button id="local" class="ghost">Answer locally only</button>
+        </div>
+        <div class="muted" style="margin-top:8px">
+          &ldquo;Answer locally only&rdquo; never sends a request. Try it on this page.
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>What stayed on this device</h2>
+        <div class="big" id="hidden">0 items hidden</div>
+        <div class="muted" id="bytes">nothing sent yet</div>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <section class="card">
+        <h2>What the server saw</h2>
+        <div class="muted" id="saw">no request yet</div>
+        <div class="log" id="ledger"></div>
+      </section>
+
+      <section class="card">
+        <h2>Response time</h2>
+        <div class="waterfall" id="wf"></div>
+        <table id="stages"><tbody></tbody></table>
+      </section>
+
+      <section class="card">
+        <h2>This device</h2>
+        <table id="hud"><tbody></tbody></table>
+      </section>
+    </main>
+    <script type="module" src="./panel.tsx"></script>
+  </body>
+</html>

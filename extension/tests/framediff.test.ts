@@ -212,7 +212,10 @@ describe('gate decision', () => {
     const l1 = toLumaThumbnail(base, 400, 300)
     commitGate(st, l1, 'hash1')
     const noisy = makeGradient(400, 300)
-    for (let i = 0; i < 40; i++) noisy[i * 4] = Math.min(255, noisy[i * 4] + 2)
+    for (let i = 0; i < 40; i++) {
+      const k = i * 4
+      noisy[k] = Math.min(255, (noisy[k] ?? 0) + 2)
+    }
     const l2 = toLumaThumbnail(noisy, 400, 300)
     expect(meanAbsDiff(l1, l2)).toBeLessThan(0.05)
     const d = evaluateGate(st, l2, 'hash1')

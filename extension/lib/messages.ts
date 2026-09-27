@@ -50,7 +50,18 @@ export const MessageSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('content:teardown') }),
 
   // content → SW
-  z.object({ kind: z.literal('snapshot:ready'), runId: z.string(), screenState: ScreenStateSchema, rawDetections: z.array(z.unknown()) }),
+  z.object({
+    kind: z.literal('snapshot:ready'),
+    runId: z.string(),
+    screenState: ScreenStateSchema,
+    rawDetections: z.array(z.unknown()),
+    /**
+     * True when at least one iframe refused injection (cross-origin, or CSP
+     * blocked the content script). The gate treats such a frame as fully
+     * sensitive and refuses to emit unless it is covered. [§5]
+     */
+    crossOriginSuspect: z.boolean().default(false),
+  }),
   z.object({ kind: z.literal('execute:done'), runId: z.string(), actionIndex: z.number().int(), ok: z.boolean(), status: z.string(), ms: z.number() }),
   z.object({ kind: z.literal('execute:confirm_required'), runId: z.string(), actionIndex: z.number().int(), label: z.string() }),
   z.object({ kind: z.literal('frame:crossorigin'), frameId: z.string() }),

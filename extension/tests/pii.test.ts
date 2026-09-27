@@ -170,7 +170,7 @@ describe('L0 semantics', () => {
   const innocuous: Array<[string, Partial<ElementLike>]> = [
     ['company', { name: 'company' }],
     ['companyName', { name: 'companyName' }],
-    ['window size', { label: 'window size' }],
+    ['window size', { title: 'window size' }],
     ['shipping address note', { name: 'shipping_note' }],
     ['laptop model', { name: 'laptop_model' }],
     ['department', { name: 'department' }],

@@ -81,7 +81,12 @@ export function verhoeff(num: string): boolean {
   let c = 0
   const rev = s.split('').reverse()
   for (let i = 0; i < rev.length; i++) {
-    c = VERHOEFF_D[c][VERHOEFF_P[i % 8][rev[i].charCodeAt(0) - 48]]
+    // The tables are 10x10 and the input is a verified 12-digit string, so
+    // every index is in range; the assertions tell the compiler that too.
+    const dRow = VERHOEFF_D[c]!
+    const pRow = VERHOEFF_P[i % 8]!
+    const digit = rev[i]!.charCodeAt(0) - 48
+    c = dRow[pRow[digit]!]!
   }
   return c === 0
 }
