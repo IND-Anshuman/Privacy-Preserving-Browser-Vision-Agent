@@ -1,0 +1,229 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_05",
+  "title": "Mobile Postpaid Upgrade — case 05",
+  "category": "telecom",
+  "split": "synthetic",
+  "adversarial_kind": 0,
+  "html": "form_05.html",
+  "sha256": "b537ece42a86f523ae82ec842f40615126e594a7d373530957d587961c0ce0f5",
+  "notes": "category=telecom; adversarial=0",
+  "instances": [
+    {
+      "id": "f05_full_name",
+      "cls": "PERSON",
+      "value": "Nisha Desai",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        11
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f05_email",
+      "cls": "EMAIL",
+      "value": "nisha.desai@mailbox.net",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        23
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f05_phone",
+      "cls": "PHONE",
+      "value": "8212603841",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f05_dob",
+      "cls": "DOB",
+      "value": "13/04/1976",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f05_summary_person",
+      "cls": "PERSON",
+      "value": "Nisha Desai",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        22
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f05_summary_email",
+      "cls": "EMAIL",
+      "value": "nisha.desai@mailbox.net",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        32,
+        55
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f05_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 82126 03841",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        59,
+        74
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f05_msisdn",
+      "cls": "PHONE",
+      "value": "6724149412",
+      "channel": "dom",
+      "node_id": "msisdn",
+      "selector": "#msisdn",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f05_sim_serial",
+      "cls": "API_KEY",
+      "value": "894107476168418562",
+      "channel": "dom",
+      "node_id": "sim_serial",
+      "selector": "#sim_serial",
+      "span": [
+        0,
+        18
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "long opaque digit string"
+    },
+    {
+      "id": "f05_otp",
+      "cls": "PASSWORD",
+      "value": "674044",
+      "channel": "dom",
+      "node_id": "otp",
+      "selector": "#otp",
+      "span": [
+        0,
+        6
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "OTP is treated like a password"
+    },
+    {
+      "id": "f05_imei",
+      "cls": "API_KEY",
+      "value": "885618983839361",
+      "channel": "dom",
+      "node_id": "imei",
+      "selector": "#imei",
+      "span": [
+        0,
+        15
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f05_canvas_0",
+      "cls": "PERSON",
+      "value": "Priya Patel",
+      "channel": "pixels",
+      "node_id": "activity_canvas",
+      "selector": "#activity_canvas",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "text drawn in canvas; L3 only"
+    },
+    {
+      "id": "f05_canvas_1",
+      "cls": "EMAIL",
+      "value": "canvas.user@acme.in",
+      "channel": "pixels",
+      "node_id": "activity_canvas",
+      "selector": "#activity_canvas",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "text drawn in canvas; L3 only"
+    },
+    {
+      "id": "f05_canvas_2",
+      "cls": "PHONE",
+      "value": "8884471283",
+      "channel": "pixels",
+      "node_id": "activity_canvas",
+      "selector": "#activity_canvas",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "text drawn in canvas; L3 only"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "msisdn",
+    "sim_serial",
+    "otp",
+    "imei",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

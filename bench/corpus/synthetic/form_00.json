@@ -1,0 +1,277 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_00",
+  "title": "Savings Account Opening — case 00",
+  "category": "banking",
+  "split": "synthetic",
+  "adversarial_kind": 0,
+  "html": "form_00.html",
+  "sha256": "2ba79eb165c9dea4eaae88e1fb94b3e9a38ec06c1ce4061f7bf3038eef3e0777",
+  "notes": "category=banking; adversarial=0",
+  "instances": [
+    {
+      "id": "f00_full_name",
+      "cls": "PERSON",
+      "value": "Divya Banerjee",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        14
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f00_email",
+      "cls": "EMAIL",
+      "value": "divya.banerjee@mailbox.net",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        26
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f00_phone",
+      "cls": "PHONE",
+      "value": "6117651412",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f00_dob",
+      "cls": "DOB",
+      "value": "05/09/1959",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f00_summary_person",
+      "cls": "PERSON",
+      "value": "Divya Banerjee",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        25
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f00_summary_email",
+      "cls": "EMAIL",
+      "value": "divya.banerjee@mailbox.net",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        35,
+        61
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f00_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 61176 51412",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        65,
+        80
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f00_password",
+      "cls": "PASSWORD",
+      "value": "iw0IW49ONmOa4G",
+      "channel": "dom",
+      "node_id": "password",
+      "selector": "#password",
+      "span": [
+        0,
+        14
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "never pseudonymized"
+    },
+    {
+      "id": "f00_aadhaar",
+      "cls": "AADHAAR",
+      "value": "834287209634",
+      "channel": "dom",
+      "node_id": "aadhaar",
+      "selector": "#aadhaar",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f00_pan",
+      "cls": "PAN",
+      "value": "QRFCU3629K",
+      "channel": "dom",
+      "node_id": "pan",
+      "selector": "#pan",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f00_card_number",
+      "cls": "CREDIT_CARD",
+      "value": "4539762088705923",
+      "channel": "dom",
+      "node_id": "card_number",
+      "selector": "#card_number",
+      "span": [
+        0,
+        16
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f00_card_cvv",
+      "cls": "CREDIT_CARD",
+      "value": "286",
+      "channel": "dom",
+      "node_id": "card_cvv",
+      "selector": "#card_cvv",
+      "span": [
+        0,
+        3
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f00_ifsc",
+      "cls": "IFSC",
+      "value": "UTIB0449585",
+      "channel": "dom",
+      "node_id": "ifsc",
+      "selector": "#ifsc",
+      "span": [
+        0,
+        11
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f00_account_no",
+      "cls": "BANK_ACCOUNT",
+      "value": "179749254356",
+      "channel": "dom",
+      "node_id": "account_no",
+      "selector": "#account_no",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f00_canvas_0",
+      "cls": "PERSON",
+      "value": "Arjun Khan",
+      "channel": "pixels",
+      "node_id": "activity_canvas",
+      "selector": "#activity_canvas",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "text drawn in canvas; L3 only"
+    },
+    {
+      "id": "f00_canvas_1",
+      "cls": "EMAIL",
+      "value": "canvas.user@example.co.in",
+      "channel": "pixels",
+      "node_id": "activity_canvas",
+      "selector": "#activity_canvas",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "text drawn in canvas; L3 only"
+    },
+    {
+      "id": "f00_canvas_2",
+      "cls": "PHONE",
+      "value": "8190384339",
+      "channel": "pixels",
+      "node_id": "activity_canvas",
+      "selector": "#activity_canvas",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "text drawn in canvas; L3 only"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "password",
+    "aadhaar",
+    "pan",
+    "card_number",
+    "card_cvv",
+    "ifsc",
+    "account_no",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

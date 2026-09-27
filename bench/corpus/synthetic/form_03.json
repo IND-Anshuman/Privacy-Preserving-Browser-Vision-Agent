@@ -1,0 +1,208 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_03",
+  "title": "Delivery Address Update — case 03",
+  "category": "ecommerce",
+  "split": "synthetic",
+  "adversarial_kind": 3,
+  "html": "form_03.html",
+  "sha256": "fbf346c4e48f12e6834d0c785456eafc5b7e4613f3908facc0c31588f2c06bdd",
+  "notes": "category=ecommerce; adversarial=3",
+  "instances": [
+    {
+      "id": "f03_full_name",
+      "cls": "PERSON",
+      "value": "Rahul Bose",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f03_email",
+      "cls": "EMAIL",
+      "value": "rahul.bose@corp.io",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        18
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f03_phone",
+      "cls": "PHONE",
+      "value": "9357912619",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f03_dob",
+      "cls": "DOB",
+      "value": "06/08/1983",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f03_summary_person",
+      "cls": "PERSON",
+      "value": "Rahul Bose",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        21
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f03_summary_email",
+      "cls": "EMAIL",
+      "value": "rahul.bose@corp.io",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        31,
+        49
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f03_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 93579 12619",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        53,
+        68
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f03_address1",
+      "cls": "ADDRESS",
+      "value": "330, FC Road, Chennai 600002",
+      "channel": "dom",
+      "node_id": "address1",
+      "selector": "#address1",
+      "span": [
+        0,
+        28
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f03_address2",
+      "cls": "ADDRESS",
+      "value": "Flat 456",
+      "channel": "dom",
+      "node_id": "address2",
+      "selector": "#address2",
+      "span": [
+        0,
+        8
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f03_card_number",
+      "cls": "CREDIT_CARD",
+      "value": "5425694948961061",
+      "channel": "dom",
+      "node_id": "card_number",
+      "selector": "#card_number",
+      "span": [
+        0,
+        16
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f03_card_exp",
+      "cls": "CREDIT_CARD",
+      "value": "11/27",
+      "channel": "dom",
+      "node_id": "card_exp",
+      "selector": "#card_exp",
+      "span": [
+        0,
+        5
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f03_autofill",
+      "cls": "PASSWORD",
+      "value": "Autofill!91191557",
+      "channel": "dom",
+      "node_id": "login_pw",
+      "selector": "#login_pw",
+      "span": [
+        0,
+        17
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "autofilled without an input event — value attr must be re-scanned each cycle"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "address1",
+    "address2",
+    "card_number",
+    "card_exp",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

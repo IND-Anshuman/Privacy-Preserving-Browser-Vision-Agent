@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_09",
+  "title": "Consignment Booking — case 09",
+  "category": "logistics",
+  "split": "synthetic",
+  "adversarial_kind": 4,
+  "html": "form_09.html",
+  "sha256": "cc509b5ccc460d074b8897d176c5157380f26e1d31fa05cd29f2f0f306629bb2",
+  "notes": "category=logistics; adversarial=4",
+  "instances": [
+    {
+      "id": "f09_full_name",
+      "cls": "PERSON",
+      "value": "Ankit Chopra",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f09_email",
+      "cls": "EMAIL",
+      "value": "ankit.chopra@example.co.in",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        26
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f09_phone",
+      "cls": "PHONE",
+      "value": "8016205970",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f09_dob",
+      "cls": "DOB",
+      "value": "14/02/1996",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f09_summary_person",
+      "cls": "PERSON",
+      "value": "Ankit Chopra",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        23
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f09_summary_email",
+      "cls": "EMAIL",
+      "value": "ankit.chopra@example.co.in",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        33,
+        59
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f09_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 80162 05970",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        63,
+        78
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f09_consignor_aadhaar",
+      "cls": "AADHAAR",
+      "value": "241487978451",
+      "channel": "dom",
+      "node_id": "consignor_aadhaar",
+      "selector": "#consignor_aadhaar",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f09_gstin",
+      "cls": "GSTIN",
+      "value": "29XBRAO9354O1ZH",
+      "channel": "dom",
+      "node_id": "gstin",
+      "selector": "#gstin",
+      "span": [
+        0,
+        15
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f09_driver_phone",
+      "cls": "PHONE",
+      "value": "8723279267",
+      "channel": "dom",
+      "node_id": "driver_phone",
+      "selector": "#driver_phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f09_face",
+      "cls": "FACE",
+      "value": "",
+      "channel": "pixels",
+      "node_id": "selfie",
+      "selector": "#selfie",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "identity photo: needs the L3 face detector, never DOM rules"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "consignor_aadhaar",
+    "gstin",
+    "driver_phone",
+    "consignment_note",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Life Insurance Proposal — case 11</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6fb;color:#111827}
+header{background:#1e3a8a;color:#fff;padding:18px 24px}
+header h1{margin:0;font-size:19px}
+main{max-width:760px;margin:0 auto;padding:20px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:18px;margin-bottom:16px}
+label{display:block;font-weight:600;margin:10px 0 4px;font-size:13px}
+input,textarea,select{width:100%;padding:9px 10px;border:1px solid #cbd5e1;border-radius:6px;font:inherit;background:#fff}
+input:focus,textarea:focus{outline:2px solid #3b82f6}
+.actions{display:flex;gap:10px;margin-top:16px}
+button{padding:10px 18px;border-radius:6px;border:1px solid #1e3a8a;background:#1e3a8a;color:#fff;font-weight:600;cursor:pointer}
+button.secondary{background:#fff;color:#1e3a8a}
+.hint{color:#6b7280;font-size:12px}
+table{width:100%;border-collapse:collapse}
+td,th{border:1px solid #e5e7eb;padding:6px 8px;text-align:left;font-size:13px}
+canvas{border:1px solid #cbd5e1;border-radius:6px;max-width:100%}
+img{border-radius:6px}
+</style>
+</head>
+<body>
+<header><h1>Life Insurance Proposal — case 11</h1></header>
+<main>
+  <section class="card" id="identity_block">
+    <h2>Applicant details</h2>
+        <label for="full_name">Full name</label><input id="full_name" name="full_name" type="text" autocomplete="name" value="Sneha Pillai">
+    <label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" value="sneha.pillai@mailbox.net">
+    <label for="phone">Mobile number</label><input id="phone" name="phone" type="tel" autocomplete="tel" value="9992432535">
+    <label for="dob">Date of birth</label><input id="dob" name="dob" type="text" autocomplete="bday" value="09/11/1979">
+    <p id="summary_para">Applicant: Sneha Pillai. Contact sneha.pillai@mailbox.net or +91 99924 32535. Permanent address: 287, Park Street, Chennai 600002.</p>
+    <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="new-password" value="xIHeNNPaodFGsh">
+    <label for="nominee">Nominee name</label><input id="nominee" name="nominee" type="text" value="Ankit Desai">
+    <label for="aadhaar">Aadhaar number</label><input id="aadhaar" name="aadhaar" type="text" value="575067823085">
+    <label for="medical_id">Policy number</label><input id="medical_id" name="medical_id" type="text" value="POL375242">
+    <label for="occupation">Occupation</label><input id="occupation" name="occupation" type="text" value="Farmer">
+    <button type="submit" id="submit_btn" name="submit_btn">Submit application</button>
+    <button type="button" id="cancel_btn" class="secondary">Cancel</button>
+    <label for="notes">Notes</label><textarea id="notes" name="notes" rows="3"></textarea>
+  </section>
+  <div id="profile_widget" data-user-email="hidden.user@acme.in" data-pii="true"
+     data-telemetry="anon">Widget</div>
+  <section class="card">
+    <h2>Review</h2>
+    <table id="summary_table">
+      <tr><th>Field</th><th>Value</th></tr>
+      <tr><td>Name</td><td>Sneha Pillai</td></tr>
+      <tr><td>Reference</td><td>VEIL-0011</td></tr>
+    </table>
+  </section>
+  <div class="actions"><button type="submit" id="submit_btn">Submit application</button><button type="button" id="cancel_btn" class="secondary">Cancel</button></div>
+</main>
+</body>
+</html>

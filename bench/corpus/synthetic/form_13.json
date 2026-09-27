@@ -1,0 +1,208 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_13",
+  "title": "Delivery Address Update — case 13",
+  "category": "ecommerce",
+  "split": "synthetic",
+  "adversarial_kind": 3,
+  "html": "form_13.html",
+  "sha256": "6c77b6ec9e24e5d8c825e5b4f62a00cb0d9ca40bb23b67efb2315fa9a30a0983",
+  "notes": "category=ecommerce; adversarial=3",
+  "instances": [
+    {
+      "id": "f13_full_name",
+      "cls": "PERSON",
+      "value": "Vikram Bose",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        11
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f13_email",
+      "cls": "EMAIL",
+      "value": "vikram.bose@acme.in",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        19
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f13_phone",
+      "cls": "PHONE",
+      "value": "9448444645",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f13_dob",
+      "cls": "DOB",
+      "value": "07/07/1972",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f13_summary_person",
+      "cls": "PERSON",
+      "value": "Vikram Bose",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        22
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f13_summary_email",
+      "cls": "EMAIL",
+      "value": "vikram.bose@acme.in",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        32,
+        51
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f13_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 94484 44645",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        55,
+        70
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f13_address1",
+      "cls": "ADDRESS",
+      "value": "81, Gariahat Road, Chennai 600002",
+      "channel": "dom",
+      "node_id": "address1",
+      "selector": "#address1",
+      "span": [
+        0,
+        33
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f13_address2",
+      "cls": "ADDRESS",
+      "value": "Flat 778",
+      "channel": "dom",
+      "node_id": "address2",
+      "selector": "#address2",
+      "span": [
+        0,
+        8
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f13_card_number",
+      "cls": "CREDIT_CARD",
+      "value": "5425979311126008",
+      "channel": "dom",
+      "node_id": "card_number",
+      "selector": "#card_number",
+      "span": [
+        0,
+        16
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f13_card_exp",
+      "cls": "CREDIT_CARD",
+      "value": "09/29",
+      "channel": "dom",
+      "node_id": "card_exp",
+      "selector": "#card_exp",
+      "span": [
+        0,
+        5
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f13_autofill",
+      "cls": "PASSWORD",
+      "value": "Autofill!57127153",
+      "channel": "dom",
+      "node_id": "login_pw",
+      "selector": "#login_pw",
+      "span": [
+        0,
+        17
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "autofilled without an input event — value attr must be re-scanned each cycle"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "address1",
+    "address2",
+    "card_number",
+    "card_exp",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

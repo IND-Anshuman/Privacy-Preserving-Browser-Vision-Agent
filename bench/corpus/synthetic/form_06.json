@@ -1,0 +1,205 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_06",
+  "title": "Scholarship Application — case 06",
+  "category": "education",
+  "split": "synthetic",
+  "adversarial_kind": 1,
+  "html": "form_06.html",
+  "sha256": "29e9e52a98cad919cec823025d28a0ded44edfa65ca9e78053e62f20c4e54492",
+  "notes": "category=education; adversarial=1",
+  "instances": [
+    {
+      "id": "f06_full_name",
+      "cls": "PERSON",
+      "value": "Ankit Iyer",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f06_email",
+      "cls": "EMAIL",
+      "value": "ankit.iyer@mailbox.net",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        22
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f06_phone",
+      "cls": "PHONE",
+      "value": "6556706843",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f06_dob",
+      "cls": "DOB",
+      "value": "26/06/2001",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f06_summary_person",
+      "cls": "PERSON",
+      "value": "Ankit Iyer",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        21
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f06_summary_email",
+      "cls": "EMAIL",
+      "value": "ankit.iyer@mailbox.net",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        31,
+        53
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f06_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 65567 06843",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        57,
+        72
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f06_student_id",
+      "cls": "BANK_ACCOUNT",
+      "value": "STU58211",
+      "channel": "dom",
+      "node_id": "student_id",
+      "selector": "#student_id",
+      "span": [
+        0,
+        8
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f06_guardian_phone",
+      "cls": "PHONE",
+      "value": "9156136268",
+      "channel": "dom",
+      "node_id": "guardian_phone",
+      "selector": "#guardian_phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f06_income_proof",
+      "cls": "MONEY",
+      "value": "₹32,00,000",
+      "channel": "dom",
+      "node_id": "income_proof",
+      "selector": "#income_proof",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "money is a low-signal class"
+    },
+    {
+      "id": "f06_institution",
+      "cls": "ORG",
+      "value": "Institute of Technology, Pune",
+      "channel": "dom",
+      "node_id": "institution",
+      "selector": "#institution",
+      "span": [
+        0,
+        29
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f06_datattr",
+      "cls": "EMAIL",
+      "value": "hidden.user@mailbox.net",
+      "channel": "attribute",
+      "node_id": "profile_widget",
+      "selector": "#profile_widget",
+      "span": null,
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "PII in data-* attribute, never rendered"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "student_id",
+    "guardian_phone",
+    "income_proof",
+    "institution",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

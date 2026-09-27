@@ -1,0 +1,208 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_08",
+  "title": "Employee Onboarding — case 08",
+  "category": "hr",
+  "split": "synthetic",
+  "adversarial_kind": 3,
+  "html": "form_08.html",
+  "sha256": "454c05810624e19a4439cfe12740474753f252055d4aa21660ad4fdc7db3292e",
+  "notes": "category=hr; adversarial=3",
+  "instances": [
+    {
+      "id": "f08_full_name",
+      "cls": "PERSON",
+      "value": "Kavya Khan",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f08_email",
+      "cls": "EMAIL",
+      "value": "kavya.khan@acme.in",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        18
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f08_phone",
+      "cls": "PHONE",
+      "value": "9350642144",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f08_dob",
+      "cls": "DOB",
+      "value": "09/02/1971",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f08_summary_person",
+      "cls": "PERSON",
+      "value": "Kavya Khan",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        21
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f08_summary_email",
+      "cls": "EMAIL",
+      "value": "kavya.khan@acme.in",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        31,
+        49
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f08_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 93506 42144",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        53,
+        68
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f08_ssn_equiv",
+      "cls": "BANK_ACCOUNT",
+      "value": "395878179685",
+      "channel": "dom",
+      "node_id": "ssn_equiv",
+      "selector": "#ssn_equiv",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "12-digit national id: Aadhaar-shaped but Verhoeff-invalid — must NOT be called AADHAAR; precision probe for the checksum gate"
+    },
+    {
+      "id": "f08_salary_account",
+      "cls": "BANK_ACCOUNT",
+      "value": "031874073445",
+      "channel": "dom",
+      "node_id": "salary_account",
+      "selector": "#salary_account",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f08_emergency_contact",
+      "cls": "PERSON",
+      "value": "Arjun Banerjee — 8403185393",
+      "channel": "dom",
+      "node_id": "emergency_contact",
+      "selector": "#emergency_contact",
+      "span": [
+        0,
+        27
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f08_office_ip",
+      "cls": "IP_ADDRESS",
+      "value": "59.84.159.14",
+      "channel": "dom",
+      "node_id": "office_ip",
+      "selector": "#office_ip",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f08_autofill",
+      "cls": "PASSWORD",
+      "value": "Autofill!85188553",
+      "channel": "dom",
+      "node_id": "login_pw",
+      "selector": "#login_pw",
+      "span": [
+        0,
+        17
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "autofilled without an input event — value attr must be re-scanned each cycle"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "ssn_equiv",
+    "salary_account",
+    "emergency_contact",
+    "office_ip",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

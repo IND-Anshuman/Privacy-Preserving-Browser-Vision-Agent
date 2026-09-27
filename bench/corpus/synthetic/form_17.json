@@ -1,0 +1,205 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_17",
+  "title": "Railway Passenger Registration — case 17",
+  "category": "travel",
+  "split": "synthetic",
+  "adversarial_kind": 2,
+  "html": "form_17.html",
+  "sha256": "866994e2487521a06fda062dcb114939e2aa93d2e10a25b8219b2d6bf8f4e7a3",
+  "notes": "category=travel; adversarial=2",
+  "instances": [
+    {
+      "id": "f17_full_name",
+      "cls": "PERSON",
+      "value": "Sneha Pillai",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f17_email",
+      "cls": "EMAIL",
+      "value": "sneha.pillai@mailbox.net",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        24
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f17_phone",
+      "cls": "PHONE",
+      "value": "9922564396",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f17_dob",
+      "cls": "DOB",
+      "value": "11/05/1989",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f17_summary_person",
+      "cls": "PERSON",
+      "value": "Sneha Pillai",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        23
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f17_summary_email",
+      "cls": "EMAIL",
+      "value": "sneha.pillai@mailbox.net",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        33,
+        57
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f17_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 99225 64396",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        61,
+        76
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f17_passenger_name",
+      "cls": "PERSON",
+      "value": "Sneha Pillai",
+      "channel": "dom",
+      "node_id": "passenger_name",
+      "selector": "#passenger_name",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f17_passport",
+      "cls": "PASSPORT",
+      "value": "B3387837",
+      "channel": "dom",
+      "node_id": "passport",
+      "selector": "#passport",
+      "span": [
+        0,
+        8
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f17_dl",
+      "cls": "DL",
+      "value": "KA053241152086",
+      "channel": "dom",
+      "node_id": "dl",
+      "selector": "#dl",
+      "span": [
+        0,
+        14
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f17_emergency_phone",
+      "cls": "PHONE",
+      "value": "7336234019",
+      "channel": "dom",
+      "node_id": "emergency_phone",
+      "selector": "#emergency_phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f17_closed_shadow",
+      "cls": "PHONE",
+      "value": "8903453832",
+      "channel": "shadow",
+      "node_id": "closed_host",
+      "selector": "#closed_host",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "closed shadow root: geometric fallback via L3 required"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "passenger_name",
+    "passport",
+    "dl",
+    "emergency_phone",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

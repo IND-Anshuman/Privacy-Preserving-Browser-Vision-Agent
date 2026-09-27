@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_19",
+  "title": "Consignment Booking — case 19",
+  "category": "logistics",
+  "split": "synthetic",
+  "adversarial_kind": 4,
+  "html": "form_19.html",
+  "sha256": "3f537401086379ce78fe90ad874547e68cd2cd20800b50c177835a72fb14b436",
+  "notes": "category=logistics; adversarial=4",
+  "instances": [
+    {
+      "id": "f19_full_name",
+      "cls": "PERSON",
+      "value": "Siddharth Verma",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        15
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f19_email",
+      "cls": "EMAIL",
+      "value": "siddharth.verma@corp.io",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        23
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f19_phone",
+      "cls": "PHONE",
+      "value": "6741769453",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f19_dob",
+      "cls": "DOB",
+      "value": "14/09/1992",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f19_summary_person",
+      "cls": "PERSON",
+      "value": "Siddharth Verma",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        26
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f19_summary_email",
+      "cls": "EMAIL",
+      "value": "siddharth.verma@corp.io",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        36,
+        59
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f19_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 67417 69453",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        63,
+        78
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f19_consignor_aadhaar",
+      "cls": "AADHAAR",
+      "value": "781439845394",
+      "channel": "dom",
+      "node_id": "consignor_aadhaar",
+      "selector": "#consignor_aadhaar",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f19_gstin",
+      "cls": "GSTIN",
+      "value": "29BOZDJ3059L1ZY",
+      "channel": "dom",
+      "node_id": "gstin",
+      "selector": "#gstin",
+      "span": [
+        0,
+        15
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f19_driver_phone",
+      "cls": "PHONE",
+      "value": "9083617571",
+      "channel": "dom",
+      "node_id": "driver_phone",
+      "selector": "#driver_phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f19_face",
+      "cls": "FACE",
+      "value": "",
+      "channel": "pixels",
+      "node_id": "selfie",
+      "selector": "#selfie",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "identity photo: needs the L3 face detector, never DOM rules"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "consignor_aadhaar",
+    "gstin",
+    "driver_phone",
+    "consignment_note",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

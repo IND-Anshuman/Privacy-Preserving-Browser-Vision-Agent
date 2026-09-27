@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobile Postpaid Upgrade — case 15</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6fb;color:#111827}
+header{background:#1e3a8a;color:#fff;padding:18px 24px}
+header h1{margin:0;font-size:19px}
+main{max-width:760px;margin:0 auto;padding:20px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:18px;margin-bottom:16px}
+label{display:block;font-weight:600;margin:10px 0 4px;font-size:13px}
+input,textarea,select{width:100%;padding:9px 10px;border:1px solid #cbd5e1;border-radius:6px;font:inherit;background:#fff}
+input:focus,textarea:focus{outline:2px solid #3b82f6}
+.actions{display:flex;gap:10px;margin-top:16px}
+button{padding:10px 18px;border-radius:6px;border:1px solid #1e3a8a;background:#1e3a8a;color:#fff;font-weight:600;cursor:pointer}
+button.secondary{background:#fff;color:#1e3a8a}
+.hint{color:#6b7280;font-size:12px}
+table{width:100%;border-collapse:collapse}
+td,th{border:1px solid #e5e7eb;padding:6px 8px;text-align:left;font-size:13px}
+canvas{border:1px solid #cbd5e1;border-radius:6px;max-width:100%}
+img{border-radius:6px}
+</style>
+</head>
+<body>
+<header><h1>Mobile Postpaid Upgrade — case 15</h1></header>
+<main>
+  <section class="card" id="identity_block">
+    <h2>Applicant details</h2>
+        <label for="full_name">Full name</label><input id="full_name" name="full_name" type="text" autocomplete="name" value="Rahul Desai">
+    <label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" value="rahul.desai@example.co.in">
+    <label for="phone">Mobile number</label><input id="phone" name="phone" type="tel" autocomplete="tel" value="9557085578">
+    <label for="dob">Date of birth</label><input id="dob" name="dob" type="text" autocomplete="bday" value="03/07/1963">
+    <p id="summary_para">Applicant: Rahul Desai. Contact rahul.desai@example.co.in or +91 95570 85578. Permanent address: 3, Park Street, Delhi 110001.</p>
+    <label for="msisdn">Current mobile</label><input id="msisdn" name="msisdn" type="tel" value="6974308128">
+    <label for="sim_serial">SIM serial</label><input id="sim_serial" name="simSerial" type="text" value="899915513614459433">
+    <label for="otp">OTP sent to your number</label><input id="otp" name="otp" type="password" value="498177">
+    <label for="imei">Device IMEI</label><input id="imei" name="imei" type="text" value="639566637890368">
+    <button type="submit" id="submit_btn" name="submit_btn">Submit application</button>
+    <button type="button" id="cancel_btn" class="secondary">Cancel</button>
+    <label for="notes">Notes</label><textarea id="notes" name="notes" rows="3"></textarea>
+  </section>
+  <section class="card">
+  <h3>Recent activity (rendered by the widget)</h3>
+  <canvas id="activity_canvas" width="520" height="160"
+    data-widget="activity-summary"></canvas>
+  <script>
+    // Text drawn into the canvas — invisible to every DOM rule (ARCHITECTURE §5).
+    (function(){
+      const c = document.getElementById('activity_canvas');
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+      g.fillStyle = '#111'; g.font = '16px monospace';
+      const lines = "Ankit Desai\ncanvas.user@mailbox.net\n6399995977".split("\\n");
+      lines.forEach((t, i) => g.fillText(t, 16, 36 + i * 26));
+    })();
+  </script>
+</section>
+  <section class="card">
+    <h2>Review</h2>
+    <table id="summary_table">
+      <tr><th>Field</th><th>Value</th></tr>
+      <tr><td>Name</td><td>Rahul Desai</td></tr>
+      <tr><td>Reference</td><td>VEIL-0015</td></tr>
+    </table>
+  </section>
+  <div class="actions"><button type="submit" id="submit_btn">Submit application</button><button type="button" id="cancel_btn" class="secondary">Cancel</button></div>
+</main>
+</body>
+</html>

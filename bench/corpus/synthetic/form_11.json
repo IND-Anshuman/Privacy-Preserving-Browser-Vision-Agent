@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_11",
+  "title": "Life Insurance Proposal — case 11",
+  "category": "insurance",
+  "split": "synthetic",
+  "adversarial_kind": 1,
+  "html": "form_11.html",
+  "sha256": "8b87332c76b2818b3b566ee5d3d8763d953a0adca0722249fd6317a6330d4f1f",
+  "notes": "category=insurance; adversarial=1",
+  "instances": [
+    {
+      "id": "f11_full_name",
+      "cls": "PERSON",
+      "value": "Sneha Pillai",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f11_email",
+      "cls": "EMAIL",
+      "value": "sneha.pillai@mailbox.net",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        24
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f11_phone",
+      "cls": "PHONE",
+      "value": "9992432535",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f11_dob",
+      "cls": "DOB",
+      "value": "09/11/1979",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f11_summary_person",
+      "cls": "PERSON",
+      "value": "Sneha Pillai",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        23
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f11_summary_email",
+      "cls": "EMAIL",
+      "value": "sneha.pillai@mailbox.net",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        33,
+        57
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f11_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 99924 32535",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        61,
+        76
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f11_password",
+      "cls": "PASSWORD",
+      "value": "xIHeNNPaodFGsh",
+      "channel": "dom",
+      "node_id": "password",
+      "selector": "#password",
+      "span": [
+        0,
+        14
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f11_nominee",
+      "cls": "PERSON",
+      "value": "Ankit Desai",
+      "channel": "dom",
+      "node_id": "nominee",
+      "selector": "#nominee",
+      "span": [
+        0,
+        11
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f11_aadhaar",
+      "cls": "AADHAAR",
+      "value": "575067823085",
+      "channel": "dom",
+      "node_id": "aadhaar",
+      "selector": "#aadhaar",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f11_datattr",
+      "cls": "EMAIL",
+      "value": "hidden.user@acme.in",
+      "channel": "attribute",
+      "node_id": "profile_widget",
+      "selector": "#profile_widget",
+      "span": null,
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "PII in data-* attribute, never rendered"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "password",
+    "nominee",
+    "aadhaar",
+    "medical_id",
+    "occupation",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

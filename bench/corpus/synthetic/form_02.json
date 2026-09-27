@@ -1,0 +1,206 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_02",
+  "title": "Aadhaar / PAN Verification — case 02",
+  "category": "gov",
+  "split": "synthetic",
+  "adversarial_kind": 2,
+  "html": "form_02.html",
+  "sha256": "de231552632046288227efa35700c8e30b29cb262dd87936383cf70b0f1fe90c",
+  "notes": "category=gov; adversarial=2",
+  "instances": [
+    {
+      "id": "f02_full_name",
+      "cls": "PERSON",
+      "value": "Rahul Joshi",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        11
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f02_email",
+      "cls": "EMAIL",
+      "value": "rahul.joshi@mailbox.net",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        23
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f02_phone",
+      "cls": "PHONE",
+      "value": "6451852161",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f02_dob",
+      "cls": "DOB",
+      "value": "25/11/1996",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f02_summary_person",
+      "cls": "PERSON",
+      "value": "Rahul Joshi",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        22
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f02_summary_email",
+      "cls": "EMAIL",
+      "value": "rahul.joshi@mailbox.net",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        32,
+        55
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f02_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 64518 52161",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        59,
+        74
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f02_aadhaar",
+      "cls": "AADHAAR",
+      "value": "210347138302",
+      "channel": "dom",
+      "node_id": "aadhaar",
+      "selector": "#aadhaar",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f02_pan",
+      "cls": "PAN",
+      "value": "DLVPH8743R",
+      "channel": "dom",
+      "node_id": "pan",
+      "selector": "#pan",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f02_gstin",
+      "cls": "GSTIN",
+      "value": "27NLTAV3829L1ZA",
+      "channel": "dom",
+      "node_id": "gstin",
+      "selector": "#gstin",
+      "span": [
+        0,
+        15
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f02_father_name",
+      "cls": "PERSON",
+      "value": "Divya Chopra",
+      "channel": "dom",
+      "node_id": "father_name",
+      "selector": "#father_name",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f02_closed_shadow",
+      "cls": "PHONE",
+      "value": "8043173444",
+      "channel": "shadow",
+      "node_id": "closed_host",
+      "selector": "#closed_host",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "closed shadow root: geometric fallback via L3 required"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "aadhaar",
+    "pan",
+    "gstin",
+    "father_name",
+    "captcha_answer",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

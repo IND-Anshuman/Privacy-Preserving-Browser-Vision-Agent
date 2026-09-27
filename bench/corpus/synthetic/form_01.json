@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_01",
+  "title": "Life Insurance Proposal — case 01",
+  "category": "insurance",
+  "split": "synthetic",
+  "adversarial_kind": 1,
+  "html": "form_01.html",
+  "sha256": "ffe59f2a1d4506ddcf7c81b9bdd2c7e5068b6e62a7cf87c0fe62aaf4837faca3",
+  "notes": "category=insurance; adversarial=1",
+  "instances": [
+    {
+      "id": "f01_full_name",
+      "cls": "PERSON",
+      "value": "Karan Verma",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        11
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f01_email",
+      "cls": "EMAIL",
+      "value": "karan.verma@corp.io",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        19
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f01_phone",
+      "cls": "PHONE",
+      "value": "7282854302",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f01_dob",
+      "cls": "DOB",
+      "value": "27/03/1998",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f01_summary_person",
+      "cls": "PERSON",
+      "value": "Karan Verma",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        22
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f01_summary_email",
+      "cls": "EMAIL",
+      "value": "karan.verma@corp.io",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        32,
+        51
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f01_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 72828 54302",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        55,
+        70
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f01_password",
+      "cls": "PASSWORD",
+      "value": "0PCZSpZAbobvT5",
+      "channel": "dom",
+      "node_id": "password",
+      "selector": "#password",
+      "span": [
+        0,
+        14
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f01_nominee",
+      "cls": "PERSON",
+      "value": "Karan Chopra",
+      "channel": "dom",
+      "node_id": "nominee",
+      "selector": "#nominee",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f01_aadhaar",
+      "cls": "AADHAAR",
+      "value": "253656275940",
+      "channel": "dom",
+      "node_id": "aadhaar",
+      "selector": "#aadhaar",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f01_datattr",
+      "cls": "EMAIL",
+      "value": "hidden.user@corp.io",
+      "channel": "attribute",
+      "node_id": "profile_widget",
+      "selector": "#profile_widget",
+      "span": null,
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "PII in data-* attribute, never rendered"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "password",
+    "nominee",
+    "aadhaar",
+    "medical_id",
+    "occupation",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

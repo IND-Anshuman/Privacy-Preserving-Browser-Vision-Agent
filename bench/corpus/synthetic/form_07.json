@@ -1,0 +1,205 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_07",
+  "title": "Railway Passenger Registration — case 07",
+  "category": "travel",
+  "split": "synthetic",
+  "adversarial_kind": 2,
+  "html": "form_07.html",
+  "sha256": "32beb7ad7a97c897fb0e8463b018787367db14f387cfdc4c3a5f70d17cfc7461",
+  "notes": "category=travel; adversarial=2",
+  "instances": [
+    {
+      "id": "f07_full_name",
+      "cls": "PERSON",
+      "value": "Rohit Patel",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        11
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f07_email",
+      "cls": "EMAIL",
+      "value": "rohit.patel@mailbox.net",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        23
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f07_phone",
+      "cls": "PHONE",
+      "value": "8941379011",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f07_dob",
+      "cls": "DOB",
+      "value": "23/12/1995",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f07_summary_person",
+      "cls": "PERSON",
+      "value": "Rohit Patel",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        22
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f07_summary_email",
+      "cls": "EMAIL",
+      "value": "rohit.patel@mailbox.net",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        32,
+        55
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f07_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 89413 79011",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        59,
+        74
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f07_passenger_name",
+      "cls": "PERSON",
+      "value": "Rohit Patel",
+      "channel": "dom",
+      "node_id": "passenger_name",
+      "selector": "#passenger_name",
+      "span": [
+        0,
+        11
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f07_passport",
+      "cls": "PASSPORT",
+      "value": "E8617887",
+      "channel": "dom",
+      "node_id": "passport",
+      "selector": "#passport",
+      "span": [
+        0,
+        8
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f07_dl",
+      "cls": "DL",
+      "value": "TN328610546034",
+      "channel": "dom",
+      "node_id": "dl",
+      "selector": "#dl",
+      "span": [
+        0,
+        14
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f07_emergency_phone",
+      "cls": "PHONE",
+      "value": "7173471938",
+      "channel": "dom",
+      "node_id": "emergency_phone",
+      "selector": "#emergency_phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f07_closed_shadow",
+      "cls": "PHONE",
+      "value": "8955324033",
+      "channel": "shadow",
+      "node_id": "closed_host",
+      "selector": "#closed_host",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "closed shadow root: geometric fallback via L3 required"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "passenger_name",
+    "passport",
+    "dl",
+    "emergency_phone",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

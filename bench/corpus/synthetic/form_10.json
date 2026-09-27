@@ -1,0 +1,277 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_10",
+  "title": "Savings Account Opening — case 10",
+  "category": "banking",
+  "split": "synthetic",
+  "adversarial_kind": 0,
+  "html": "form_10.html",
+  "sha256": "c3254388b8309308a5c901d2595a2a151cde21320c17169d790ecff7bc75b6de",
+  "notes": "category=banking; adversarial=0",
+  "instances": [
+    {
+      "id": "f10_full_name",
+      "cls": "PERSON",
+      "value": "Sneha Nair",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f10_email",
+      "cls": "EMAIL",
+      "value": "sneha.nair@acme.in",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        18
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f10_phone",
+      "cls": "PHONE",
+      "value": "6426290311",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f10_dob",
+      "cls": "DOB",
+      "value": "03/05/1971",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f10_summary_person",
+      "cls": "PERSON",
+      "value": "Sneha Nair",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        21
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f10_summary_email",
+      "cls": "EMAIL",
+      "value": "sneha.nair@acme.in",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        31,
+        49
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f10_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 64262 90311",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        53,
+        68
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f10_password",
+      "cls": "PASSWORD",
+      "value": "weXAa5NoZ77xp7",
+      "channel": "dom",
+      "node_id": "password",
+      "selector": "#password",
+      "span": [
+        0,
+        14
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "never pseudonymized"
+    },
+    {
+      "id": "f10_aadhaar",
+      "cls": "AADHAAR",
+      "value": "586911348439",
+      "channel": "dom",
+      "node_id": "aadhaar",
+      "selector": "#aadhaar",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f10_pan",
+      "cls": "PAN",
+      "value": "JDDPV8496Z",
+      "channel": "dom",
+      "node_id": "pan",
+      "selector": "#pan",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f10_card_number",
+      "cls": "CREDIT_CARD",
+      "value": "4539301825916913",
+      "channel": "dom",
+      "node_id": "card_number",
+      "selector": "#card_number",
+      "span": [
+        0,
+        16
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f10_card_cvv",
+      "cls": "CREDIT_CARD",
+      "value": "290",
+      "channel": "dom",
+      "node_id": "card_cvv",
+      "selector": "#card_cvv",
+      "span": [
+        0,
+        3
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f10_ifsc",
+      "cls": "IFSC",
+      "value": "SBIN0844412",
+      "channel": "dom",
+      "node_id": "ifsc",
+      "selector": "#ifsc",
+      "span": [
+        0,
+        11
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f10_account_no",
+      "cls": "BANK_ACCOUNT",
+      "value": "272006566013",
+      "channel": "dom",
+      "node_id": "account_no",
+      "selector": "#account_no",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f10_canvas_0",
+      "cls": "PERSON",
+      "value": "Ankit Nair",
+      "channel": "pixels",
+      "node_id": "activity_canvas",
+      "selector": "#activity_canvas",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "text drawn in canvas; L3 only"
+    },
+    {
+      "id": "f10_canvas_1",
+      "cls": "EMAIL",
+      "value": "canvas.user@corp.io",
+      "channel": "pixels",
+      "node_id": "activity_canvas",
+      "selector": "#activity_canvas",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "text drawn in canvas; L3 only"
+    },
+    {
+      "id": "f10_canvas_2",
+      "cls": "PHONE",
+      "value": "7216452622",
+      "channel": "pixels",
+      "node_id": "activity_canvas",
+      "selector": "#activity_canvas",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "text drawn in canvas; L3 only"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "password",
+    "aadhaar",
+    "pan",
+    "card_number",
+    "card_cvv",
+    "ifsc",
+    "account_no",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

@@ -1,0 +1,205 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_16",
+  "title": "Scholarship Application — case 16",
+  "category": "education",
+  "split": "synthetic",
+  "adversarial_kind": 1,
+  "html": "form_16.html",
+  "sha256": "4c7a25b695f5eb4591b9b63d6ed863eb79e01a34245884392d67baef7f7e606d",
+  "notes": "category=education; adversarial=1",
+  "instances": [
+    {
+      "id": "f16_full_name",
+      "cls": "PERSON",
+      "value": "Arjun Iyer",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f16_email",
+      "cls": "EMAIL",
+      "value": "arjun.iyer@example.co.in",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        24
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f16_phone",
+      "cls": "PHONE",
+      "value": "9861128973",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f16_dob",
+      "cls": "DOB",
+      "value": "07/09/1987",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f16_summary_person",
+      "cls": "PERSON",
+      "value": "Arjun Iyer",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        21
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f16_summary_email",
+      "cls": "EMAIL",
+      "value": "arjun.iyer@example.co.in",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        31,
+        55
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f16_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 98611 28973",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        59,
+        74
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f16_student_id",
+      "cls": "BANK_ACCOUNT",
+      "value": "STU84527",
+      "channel": "dom",
+      "node_id": "student_id",
+      "selector": "#student_id",
+      "span": [
+        0,
+        8
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f16_guardian_phone",
+      "cls": "PHONE",
+      "value": "8486787161",
+      "channel": "dom",
+      "node_id": "guardian_phone",
+      "selector": "#guardian_phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f16_income_proof",
+      "cls": "MONEY",
+      "value": "₹4,00,000",
+      "channel": "dom",
+      "node_id": "income_proof",
+      "selector": "#income_proof",
+      "span": [
+        0,
+        9
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "money is a low-signal class"
+    },
+    {
+      "id": "f16_institution",
+      "cls": "ORG",
+      "value": "Institute of Technology, Chennai",
+      "channel": "dom",
+      "node_id": "institution",
+      "selector": "#institution",
+      "span": [
+        0,
+        32
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f16_datattr",
+      "cls": "EMAIL",
+      "value": "hidden.user@corp.io",
+      "channel": "attribute",
+      "node_id": "profile_widget",
+      "selector": "#profile_widget",
+      "span": null,
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "PII in data-* attribute, never rendered"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "student_id",
+    "guardian_phone",
+    "income_proof",
+    "institution",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}

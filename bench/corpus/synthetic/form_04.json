@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0.0",
+  "id": "syn_04",
+  "title": "Patient Registration — case 04",
+  "category": "health",
+  "split": "synthetic",
+  "adversarial_kind": 4,
+  "html": "form_04.html",
+  "sha256": "042b0ef8d51c2b49697da1881e9959927049ada9d81a323cdf286b91ac0fefa5",
+  "notes": "category=health; adversarial=4",
+  "instances": [
+    {
+      "id": "f04_full_name",
+      "cls": "PERSON",
+      "value": "Karan Rao",
+      "channel": "dom",
+      "node_id": "full_name",
+      "selector": "#full_name",
+      "span": [
+        0,
+        9
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f04_email",
+      "cls": "EMAIL",
+      "value": "karan.rao@acme.in",
+      "channel": "dom",
+      "node_id": "email",
+      "selector": "#email",
+      "span": [
+        0,
+        17
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f04_phone",
+      "cls": "PHONE",
+      "value": "8704664643",
+      "channel": "dom",
+      "node_id": "phone",
+      "selector": "#phone",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f04_dob",
+      "cls": "DOB",
+      "value": "10/07/1984",
+      "channel": "dom",
+      "node_id": "dob",
+      "selector": "#dob",
+      "span": [
+        0,
+        10
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f04_summary_person",
+      "cls": "PERSON",
+      "value": "Karan Rao",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        11,
+        20
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f04_summary_email",
+      "cls": "EMAIL",
+      "value": "karan.rao@acme.in",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        30,
+        47
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f04_summary_phone",
+      "cls": "PHONE",
+      "value": "+91 87046 64643",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        51,
+        66
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
+      "id": "f04_patient_id",
+      "cls": "BANK_ACCOUNT",
+      "value": "PT338927",
+      "channel": "dom",
+      "node_id": "patient_id",
+      "selector": "#patient_id",
+      "span": [
+        0,
+        8
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": "hospital MRN — treated as an identifier"
+    },
+    {
+      "id": "f04_emergency_contact",
+      "cls": "PERSON",
+      "value": "Sneha Sharma +91 8568854775",
+      "channel": "dom",
+      "node_id": "emergency_contact",
+      "selector": "#emergency_contact",
+      "span": [
+        0,
+        27
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": ""
+    },
+    {
+      "id": "f04_aadhaar",
+      "cls": "AADHAAR",
+      "value": "825252470062",
+      "channel": "dom",
+      "node_id": "aadhaar",
+      "selector": "#aadhaar",
+      "span": [
+        0,
+        12
+      ],
+      "box": null,
+      "redaction_method": "solid_fill",
+      "note": ""
+    },
+    {
+      "id": "f04_face",
+      "cls": "FACE",
+      "value": "",
+      "channel": "pixels",
+      "node_id": "selfie",
+      "selector": "#selfie",
+      "span": null,
+      "box": null,
+      "redaction_method": "pixelate",
+      "note": "identity photo: needs the L3 face detector, never DOM rules"
+    }
+  ],
+  "field_ids": [
+    "full_name",
+    "email",
+    "phone",
+    "dob",
+    "summary_para",
+    "patient_id",
+    "diagnosis",
+    "emergency_contact",
+    "aadhaar",
+    "submit_btn",
+    "cancel_btn",
+    "notes"
+  ],
+  "submit_node": "submit_btn"
+}
