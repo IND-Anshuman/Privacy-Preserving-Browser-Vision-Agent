@@ -12,6 +12,7 @@ import { initDevice, runL2, mapL2Label, getDeviceInfo, getSession, getLoadTiming
 import { redactFrame } from './redact'
 import { PressureMonitor, planFor as pressurePlan, type CascadePlan } from './pressure'
 import { dhash, evaluateGate, commitGate, newGateState, toLumaThumbnail, type GateState } from '@/lib/framediff'
+import { nerBatchSize } from '@/lib/device'
 import { type MarkAssignment } from '@/lib/som'
 
 const log = (m: string): void => {
@@ -207,8 +208,16 @@ async function runCapture(
     if (useL2) {
       const texts = domItems.map((i) => i.text ?? '').filter(Boolean)
       if (texts.length) {
-        const r = await runL2(texts.slice(0, 64))
+        // Adaptive batch size. Activation memory scales linearly with batch:
+        // a 512-token, 768-hidden transformer activation is ~12 MB at B=8 and
+        // ~96 MB at B=64, and a 12-layer model holds several of those at once.
+        // A hardcoded 64 therefore OOMs on the low-memory devices this feature
+        // is supposed to support, so the batch is derived from what the
+        // device actually reports. [§7 resource discipline]
+        const batch = nerBatchSize()
+        const r = await runL2(texts.slice(0, batch))
         timings['l2'] = r.ms
+        timings['l2_batch'] = batch
         if (r.available) {
           for (const s of r.spans) {
             const cls = mapL2Label(s.label)
