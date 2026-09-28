@@ -45,13 +45,20 @@ from pydantic import BaseModel, ConfigDict, Field
 try:
     from .actions import ActionPlan, validate_plan
     from .prompts import build_system_preamble
+    from .providers import PlanRequest, ProviderUnavailable, Router
+    from .session import DEFAULT_MAX_ATTEMPTS, SessionStore
+    from .injection import injection_note, scan_many
+    from . import manifest_privacy
+    # Retained for the delta-tile frame cache, which is transport state, not
+    # model state, and has no business moving behind the provider interface.
     from .vllm_client import VLLMClient, VLLMUnavailable
 except ImportError as _rel_err:  # running as a script, not as `server.app`
     # Guard on the symptom. A broad except here hid a real failure: the
     # relative import raised for `vllm_client` from inside prompts.py, the
     # fallback ran, and the resulting error named a module that plainly existed.
     if getattr(_rel_err, "name", None) not in {
-        "actions", "prompts", "vllm_client", "server",
+        "actions", "prompts", "vllm_client", "server", "providers",
+        "session", "injection", "manifest_privacy",
     }:
         raise
     # The fallback only resolves if server/ itself is importable, which it is
@@ -60,7 +67,11 @@ except ImportError as _rel_err:  # running as a script, not as `server.app`
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from actions import ActionPlan, validate_plan
     from prompts import build_system_preamble
+    from providers import PlanRequest, ProviderUnavailable, Router
+    from session import DEFAULT_MAX_ATTEMPTS, SessionStore
+    from injection import injection_note, scan_many
     from vllm_client import VLLMClient, VLLMUnavailable
+    import manifest_privacy
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -123,7 +134,35 @@ app.add_middleware(
     allow_credentials=False,
 )
 
+# The planner (any OpenAI-compatible vision endpoint, or a local vLLM) and the
+# per-session state. Both are module-level singletons because FastAPI handlers
+# are stateless functions; the state they share is transport state, not
+# request state, and lives in the objects rather than in globals.
+router = Router()
+sessions = SessionStore()
 client = VLLMClient()
+
+#: Below this plan confidence the client is told to ask rather than act. The
+#: model emits `confidence` and nothing consumed it; this is the consumer, and
+#: the threshold is deliberately conservative — an unnecessary question is a
+#: much smaller failure than a wrong click.
+CONFIDENCE_FLOOR = float(os.environ.get("VEIL_CONFIDENCE_FLOOR", "0.55"))
+
+
+def _page_texts(req: StepRequest) -> list[str]:
+    """Every label the client sent, for injection scanning.
+
+    Deliberately labels only, never values. A password's "label" is its field
+    name; scanning it costs nothing and the raw value never reaches here.
+    """
+    out: list[str] = []
+    stack = [req.screen_state.root]
+    while stack:
+        n = stack.pop()
+        if n.label:
+            out.append(n.label)
+        stack.extend(n.children)
+    return out
 
 
 # ---------------------------------------------------------------- models
@@ -246,11 +285,46 @@ def _log_metadata(req: StepRequest, out: str, elapsed_ms: float) -> None:
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
+    """Liveness plus the honesty surface.
+
+    Reports every configured provider with its DECLARED capabilities, plus what
+    is actually selected right now. An operator debugging "why is my plan being
+    rejected" needs to see that the provider downgraded its schema enforcement,
+    and a health check that only says `ok: true` would hide exactly that.
+    """
+    active = router.active()
+    caps = [p.caps.as_dict() for p in router.providers]
     return {
         "ok": True,
         "vllm": client.available,
-        "model": client.model_name,
-        "engine": client.engine_summary,
+        "model": active.model_name() if active else None,
+        "engine": active.engine_summary if active else "no provider reachable",
+        "provider": active.caps.name if active else None,
+        "providers": caps,
+        "confidence_floor": CONFIDENCE_FLOOR,
+        "manifest_privacy": manifest_privacy.mode_from_env(),
+        "sessions": len(sessions.all()),
+    }
+
+
+@app.get("/v1/agent/session/{session_id}")
+async def session_status(session_id: str) -> dict[str, Any]:
+    """Per-session cost, attempts and failures. Read-only.
+
+    Exists so the extension's HUD can show what a task has cost and why it is
+    stuck, instead of the user guessing. Deliberately not a payload endpoint:
+    it returns counts and state, never a plan or a page.
+    """
+    s = sessions.get(session_id)
+    return {
+        # The full id, not a suffix. A truncated id makes the endpoint
+        # impossible to correlate with a plan, which is the one thing it
+        # exists for. It is an opaque client-generated string, not a secret.
+        "session_id": session_id,
+        "intent": s.intent[:200],
+        **s.summary(),
+        "recent_failures": s.failures[-3:],
+        "declined": s.declined[-3:],
     }
 
 
@@ -269,6 +343,67 @@ async def step(req: StepRequest, request: Request) -> StreamingResponse:
 
     if req.turn > 0 and not req.image_b64 and not req.tiles:
         raise HTTPException(status_code=400, detail="delta turn requires image_b64 or tiles")
+
+    # ---- session state, and the loop cap -------------------------------
+    #
+    # The cap is checked BEFORE planning, not after. A step that fails, replans,
+    # fails again is an agent that will spin; the property that makes retrying
+    # safe is that it cannot.
+    sess = sessions.get(req.session_id)
+    if req.intent:
+        sess.intent = req.intent
+    sess.turns += 1
+    if sess.exhausted():
+        stop = ActionPlan(
+            schema_version=SCHEMA_VERSION,
+            session_id=req.session_id,
+            steps=[
+                {
+                    "action": "ask_user",
+                    "reason": (
+                        f"stopping after {len(sess.attempts)} attempts without "
+                        f"success: {sess.failures[-1][:120] if sess.failures else 'unknown'}. "
+                        "Handing control back rather than retrying."
+                    ),
+                }
+            ],
+            confidence=0.0,
+            needs_more_context=["manual intervention required"],
+        )
+        log.info(
+            "session=%s replan cap reached (%d attempts)", req.session_id[-8:], len(sess.attempts)
+        )
+        return StreamingResponse(
+            _sse_once(stop.model_dump_json()),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
+    # ---- injection scan -----------------------------------------------
+    findings = scan_many(_page_texts(req))
+    if findings:
+        log.warning(
+            "session=%s page contains instruction-shaped text: %s",
+            req.session_id[-8:],
+            ",".join(sorted({f.kind for f in findings})),
+        )
+
+    # ---- provider ------------------------------------------------------
+    provider = await router.resolve()
+    if provider is None:
+        return StreamingResponse(
+            _sse_once(
+                ActionPlan(
+                    schema_version=SCHEMA_VERSION,
+                    session_id=req.session_id,
+                    steps=[{"action": "none", "reason": "no provider reachable"}],
+                    confidence=0.0,
+                    needs_more_context=["configure VEIL_LLM_API_KEY / VEIL_LLM_BASE_URL / VEIL_LLM_MODEL"],
+                ).model_dump_json()
+            ),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
 
     # §7 delta-tile re-compositing, on the STEP path.
     #
@@ -294,17 +429,33 @@ async def step(req: StepRequest, request: Request) -> StreamingResponse:
         # A full frame becomes the new base for subsequent delta turns.
         client.store_frame(req.session_id, req.image_b64)
 
-    preamble = build_system_preamble(req.redaction_manifest.model_dump())
+    preamble = build_system_preamble(
+        req.redaction_manifest.model_dump(),
+        session=sess,
+        capabilities=provider.caps,
+        injection=injection_note(findings),
+    )
     user_text = _build_user_text(req)
+    plan_req = PlanRequest(
+        system=preamble,
+        user_text=user_text,
+        image_b64=effective_image,
+        session_id=req.session_id,
+        turn=req.turn,
+    )
 
     async def gen() -> AsyncIterator[str]:
         t0 = time.perf_counter()
         acc: list[str] = []
+        first = True
         try:
-            async for chunk in client.stream_plan(preamble, user_text, effective_image):
+            async for chunk in provider.stream(plan_req):
                 acc.append(chunk)
                 yield f"data: {json.dumps({'delta': chunk})}\n\n"
-        except VLLMUnavailable as e:
+                if first:
+                    first = False
+                    _first_token_ms = (time.perf_counter() - t0) * 1000
+        except ProviderUnavailable as e:
             # Honest degradation, never a hallucinated plan. §9
             fallback = ActionPlan(
                 schema_version=SCHEMA_VERSION,
@@ -319,7 +470,32 @@ async def step(req: StepRequest, request: Request) -> StreamingResponse:
             yield "data: [DONE]\n\n"
             return
 
-        _log_metadata(req, "".join(acc), (time.perf_counter() - t0) * 1000)
+        raw = "".join(acc)
+        gated = _apply_escalation_gate(raw, req, sess)
+        if gated is not None:
+            # The plan was schema-valid but not trustworthy enough to execute.
+            # Re-stream the replacement so the client executes nothing else.
+            acc = [gated]
+            raw = gated
+            yield f"data: {json.dumps({'delta': gated})}\n\n"
+
+        # Cost accounting. Estimated from the request when the streaming path
+        # does not report usage: an image is ~1.1-1.6k tokens at 1080p, and the
+        # tree is a few hundred. Marked as an estimate because it is one — a
+        # billing figure invented from a formula is worse than no figure.
+        est_in = plan_req.image_bytes() // 750 + len(preamble) // 4 + len(user_text) // 4
+        sess.record_cost(est_in, max(0, len(raw) // 4), est_in / 1_000_000 * (provider.caps.usd_per_mtok_in or 0.0))
+        log.info(
+            "session=%s provider=%s model=%s est_in_tok=%d cost_usd=%s cumulative=%s",
+            req.session_id[-8:],
+            provider.caps.name,
+            provider.model_name(),
+            est_in,
+            sess.cost_usd if sess.cost_usd is not None else "unknown",
+            sess.cost_usd if sess.cost_usd is not None else "unknown",
+        )
+
+        _log_metadata(req, raw, (time.perf_counter() - t0) * 1000)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -356,6 +532,43 @@ async def tiles(req: StepRequest) -> dict[str, Any]:
     }
 
 
+@app.post("/v1/agent/outcome")
+async def outcome(body: dict[str, Any]) -> dict[str, Any]:
+    """Client reports what actually happened after executing a step.
+
+    This is the input the replan loop needs. Without it the server cannot tell
+    "the step worked" from "the step silently did nothing", and a failed
+    automation looks exactly like a successful one until the user notices.
+
+    Accepts only counts, action names and a short reason. A free-form `detail`
+    is truncated and never treated as instructions.
+    """
+    sid = str(body.get("session_id", ""))
+    if len(sid) < 8:
+        raise HTTPException(status_code=400, detail="session_id required")
+    s = sessions.get(sid)
+
+    action = str(body.get("action", ""))[:32]
+    ok = bool(body.get("ok", False))
+    detail = str(body.get("detail", ""))[:200]
+
+    if ok:
+        if action:
+            s.completed.append(action)
+    else:
+        if detail:
+            s.failures.append(detail)
+        s.note_attempt(int(body.get("turn", s.turns)), action or "unknown", ok=False, detail=detail)
+
+    declined = body.get("declined")
+    if declined:
+        # Remembered so the next preamble can say "the user declined this" and
+        # the model does not propose it again. The anti-nagging property.
+        s.declined.append(str(declined)[:80])
+
+    return {"ok": True, **s.summary()}
+
+
 @app.post("/v1/agent/validate")
 async def validate(req: dict[str, Any]) -> dict[str, Any]:
     """Validate a plan against the same contract the client enforces."""
@@ -364,6 +577,72 @@ async def validate(req: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001 — surfaced verbatim to the client
         return {"ok": False, "error": str(e)}
     return {"ok": True, "plan": plan.model_dump()}
+
+
+async def _sse_once(plan_json: str) -> AsyncIterator[str]:
+    """A complete plan as a one-chunk SSE stream, then [DONE].
+
+    Used for the paths that must NOT call a model at all — the loop cap and the
+    no-provider case. They still have to arrive in the same envelope the client
+    already parses, because a client that special-cases them is a client with
+    two code paths to keep in sync.
+    """
+    yield f"data: {json.dumps({'delta': plan_json})}\n\n"
+    yield "data: [DONE]\n\n"
+
+
+def _apply_escalation_gate(
+    raw: str, req: StepRequest, sess: Any
+) -> str | None:
+    """Replace an executable-but-untrustworthy plan with an ask_user.
+
+    Returns the replacement JSON, or None to let the plan through. Two triggers:
+
+      LOW CONFIDENCE — the model emitted `confidence` and nothing consumed it.
+        A plan below the floor is turned into a question. An unnecessary
+        question is a much smaller failure than a wrong click.
+
+      LOOP CAP — checked before planning for new attempts, but a plan that
+        arrives on the attempt that hits the cap is replaced here too, so the
+        cap holds regardless of which path the turn took.
+
+    A plan that will not parse is NOT touched here. The validator owns that,
+    and a parse failure must surface as a failure rather than be silently
+    rewritten into something executable-looking.
+    """
+    try:
+        plan = ActionPlan.model_validate_json(raw)
+    except Exception:  # noqa: BLE001 — malformed output is the validator's business
+        return None
+
+    reasons: list[str] = []
+    if plan.confidence < CONFIDENCE_FLOOR:
+        reasons.append(f"model confidence {plan.confidence:.2f} is below the {CONFIDENCE_FLOOR:.2f} floor")
+
+    if sess.exhausted():
+        reasons.append(f"reached the {DEFAULT_MAX_ATTEMPTS}-attempt cap for this task")
+
+    if not reasons:
+        # `steps` holds typed ActionStep models, not dicts. Reaching for .get()
+        # here raised AttributeError on the first plan that passed the gate,
+        # which is to say on the first plan that was actually usable.
+        first = plan.steps[0]
+        first_action = getattr(first, "action", None) or "none"
+        sess.note_attempt(req.turn, first_action, ok=True)
+        return None
+
+    escalated = ActionPlan(
+        schema_version=SCHEMA_VERSION,
+        session_id=req.session_id,
+        steps=[{"action": "ask_user", "reason": "; ".join(reasons) + ". Confirm how to proceed."}],
+        confidence=plan.confidence,
+        needs_more_context=list(plan.needs_more_context) + reasons,
+    )
+    sess.note_attempt(req.turn, "ask_user", ok=False, detail="; ".join(reasons))
+    log.info(
+        "session=%s escalated to ask_user (%s)", req.session_id[-8:], "; ".join(reasons)
+    )
+    return escalated.model_dump_json()
 
 
 def _build_user_text(req: StepRequest) -> str:
@@ -377,6 +656,11 @@ def _build_user_text(req: StepRequest) -> str:
     lines.append(f"PAGE: {req.screen_state.title}")
     lines.append(f"URL: {req.screen_state.url}")
     lines.append(f"MARKS: {req.screen_state.mark_count}")
+    # The session id MUST be in the prompt. It was missing, so a model could
+    # not echo it, and the plan it returned carried whatever id it invented —
+    # which the client then rejected as a cross-session plan. The schema
+    # requires the field; the prompt has to supply the value.
+    lines.append(f"SESSION: {req.session_id}")
     lines.append("")
 
     def walk(n: NodeModel, depth: int = 0) -> None:

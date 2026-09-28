@@ -65,6 +65,40 @@ services:
       # known, `dev` allows any extension origin and still excludes every
       # http/https page.
       VEIL_ALLOWED_ORIGINS: ${VEIL_ALLOWED_ORIGINS:-dev}
+      # ---- planner selection -------------------------------------------
+      #
+      # Any OpenAI-compatible vision endpoint works. Set the key and base URL
+      # in a .env file next to docker-compose.yml; the key is never committed
+      # and never logged.
+      #
+      # VEIL_LLM_PROVIDER: auto (default, prefer the local vLLM when it is up)
+      #   | local (force vLLM — nothing leaves the machine)
+      #   | openai (force the API endpoint)
+      VEIL_LLM_PROVIDER: ${VEIL_LLM_PROVIDER:-auto}
+      VEIL_LLM_API_KEY: ${VEIL_LLM_API_KEY:-}
+      VEIL_LLM_BASE_URL: ${VEIL_LLM_BASE_URL:-}
+      VEIL_LLM_MODEL: ${VEIL_LLM_MODEL:-}
+      # strict = token-level json_schema (best). Use `json` for an endpoint
+      # that rejects the strict key; it downgrades the declared guarantee and
+      # the client is told.
+      VEIL_LLM_MODE: ${VEIL_LLM_MODE:-strict}
+      # Declared by YOU, never inferred: only the account owner knows whether
+      # their tier excludes training. Some free tiers explicitly do not.
+      VEIL_LLM_ZDR: ${VEIL_LLM_ZDR:-false}
+      # USD per 1M tokens, for cost accounting. Unset means UNKNOWN, which is
+      # reported as unknown rather than as zero.
+      VEIL_LLM_PRICING_IN: ${VEIL_LLM_PRICING_IN:-}
+      VEIL_LLM_PRICING_OUT: ${VEIL_LLM_PRICING_OUT:-}
+      # ---- behaviour -----------------------------------------------------
+      VEIL_CONFIDENCE_FLOOR: ${VEIL_CONFIDENCE_FLOOR:-0.55}
+      # exact | bucketed | noise — how much the manifest reveals about HOW MANY
+      # items of each class were hidden. See server/manifest_privacy.py.
+      VEIL_MANIFEST_PRIVACY: ${VEIL_MANIFEST_PRIVACY:-exact}
+      VEIL_MANIFEST_EPSILON: ${VEIL_MANIFEST_EPSILON:-1.0}
+    # A key present only in the environment, never baked into the image.
+    env_file:
+      - path: .env
+        required: false
     ports:
       - "8000:8000"
     restart: unless-stopped

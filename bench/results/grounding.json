@@ -1,0 +1,55 @@
+{
+  "model": "mock-loose",
+  "provider": "openai-compatible",
+  "schema_enforcement": "strict",
+  "forms": 3,
+  "parsed": 0,
+  "used_mark": 0,
+  "invented_marks": 0,
+  "latency_p50_ms": 7,
+  "latency_max_ms": 8,
+  "mean_input_tokens": 1900,
+  "cost_per_turn_usd": null,
+  "rows": [
+    {
+      "parses": false,
+      "uses_mark": false,
+      "invented_marks": [],
+      "action": null,
+      "confidence": null,
+      "form": "form_00",
+      "ms": 7,
+      "in_tok": 1900,
+      "out_tok": 20,
+      "usd": null
+    },
+    {
+      "parses": false,
+      "uses_mark": false,
+      "invented_marks": [],
+      "action": null,
+      "confidence": null,
+      "form": "form_01",
+      "ms": 8,
+      "in_tok": 1900,
+      "out_tok": 20,
+      "usd": null
+    },
+    {
+      "parses": false,
+      "uses_mark": false,
+      "invented_marks": [],
+      "action": null,
+      "confidence": null,
+      "form": "form_02",
+      "ms": 7,
+      "in_tok": 1900,
+      "out_tok": 20,
+      "usd": null
+    }
+  ],
+  "verdict": [
+    "SCHEMA FAILURE \u2014 plans are being rejected. Set VEIL_LLM_MODE=strict, or accept that the validator is your only gate.",
+    "NO MARK USE \u2014 this model describes pages but does not target elements by number. Do not ship it as the planner."
+  ]
+}
