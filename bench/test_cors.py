@@ -54,6 +54,78 @@ def check(name: str, ok: bool, detail: str = "") -> None:
         FAILS.append(name)
 
 
+def preflight(origin: str, port: int = 8199) -> tuple[int, str]:
+    """Send a REAL CORS preflight and return (status, allow-origin).
+
+    The existing checks in this file assert on the parsed `_ALLOWED` list, which
+    is a VARIABLE, not behaviour — and that is how the `dev` bug survived a
+    green suite. `dev` expanded to `["chrome-extension://*"]`, Starlette does
+    exact string matching with no glob support, so that list matched nothing and
+    every request was blocked. The variable looked correct; the preflight
+    returned 400 with no `access-control-allow-origin`.
+
+    So these cases start a real server and ask the browser's actual question.
+
+    The port is deliberately unusual. The first version used 8123, which
+    happened to be occupied by a leftover preview server from another task, so
+    every preflight got that server's 404 and all three checks failed for a
+    reason that had nothing to do with CORS. A liveness check that passes
+    against the WRONG process is worse than no check: it looks like a result.
+    """
+    env = dict(os.environ)
+    env["VEIL_ALLOWED_ORIGINS"] = "dev"
+    env["PYTHONPATH"] = str(ROOT)
+    code = (
+        "import uvicorn, server.app as a\n"
+        f"uvicorn.run(a.app, host='127.0.0.1', port={port}, log_level='error')\n"
+    )
+    proc = subprocess.Popen(
+        [PY, "-c", code], env=env, cwd=str(ROOT),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        import time
+
+        import httpx
+
+        base = f"http://127.0.0.1:{port}"
+        up = False
+        for _ in range(60):
+            if proc.poll() is not None:
+                return -1, f"(our server exited rc={proc.returncode})"
+            try:
+                # Confirm it is OUR server, not a squatter: /health reports the
+                # provider list, which only this app produces.
+                h = httpx.get(f"{base}/health", timeout=2.0)
+                if h.status_code == 200 and "providers" in h.json():
+                    up = True
+                    break
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(0.5)
+        if not up:
+            return -1, "(our server never became ready)"
+
+        r = httpx.options(
+            f"{base}/v1/agent/step",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+            timeout=10.0,
+        )
+        return r.status_code, r.headers.get("access-control-allow-origin", "(none)")
+    except Exception as e:  # noqa: BLE001
+        return -1, f"error:{type(e).__name__}"
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
 def main() -> None:
     print("\n  CORS POLICY")
     print("  " + "=" * 66)
@@ -91,10 +163,14 @@ def main() -> None:
 
     # 4. "dev" allows extension origins but NOT http pages.
     rc, out, err = run_with_origin("dev")
-    ok = rc == 0 and "chrome-extension://*" in out and "http" not in out.replace("http://", "@@")
+    # 4. "dev" must compile to a REGEX, not a glob. Starlette compares the
+    #    request Origin by exact string match and has no wildcard support, so
+    #    the previous `["chrome-extension://*"]` matched NOTHING — the extension
+    #    was fully blocked while this variable still looked correct.
+    rc, out, err = run_with_origin("dev")
     check(
-        '"dev" allows extension origins but excludes web pages',
-        ok,
+        '"dev" compiles to a REGEX handed to allow_origin_regex, not a glob',
+        rc == 0 and "chrome-extension://*" not in out,
         f"rc={rc} out={out.strip()[:120]}",
     )
 
@@ -131,6 +207,37 @@ def main() -> None:
         "docker-compose does not set a wildcard origin",
         not bad,
         f"{bad}",
+    )
+
+    # 8. BEHAVIOUR, not configuration. Everything above inspects a variable or a
+    #    string; these start a real server and send the preflight a browser
+    #    sends. The `dev` case above PASSED while the extension was completely
+    #    blocked in practice, which is the whole reason these exist.
+    print("\n  CORS BEHAVIOUR (real preflights against a live server)")
+    chrome_ext = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+    firefox_ext = "moz-extension://abcdef12-3456-7890-abcd-ef1234567890"
+    webpage = "https://evil.example.com"
+
+    code, allow = preflight(chrome_ext)
+    check(
+        "dev mode ACTUALLY allows a chrome-extension origin",
+        code == 200 and allow == chrome_ext,
+        f"preflight {code} allow-origin={allow!r}",
+    )
+
+    code, allow = preflight(firefox_ext)
+    check(
+        "dev mode ACTUALLY allows a firefox-extension origin",
+        code == 200 and allow == firefox_ext,
+        f"preflight {code} allow-origin={allow!r} "
+        f"(moz ids use dashes, so a-z-only regex rejects them)",
+    )
+
+    code, allow = preflight(webpage)
+    check(
+        "dev mode ACTUALLY refuses an http/https page",
+        code == 400 and allow == "(none)",
+        f"preflight {code} allow-origin={allow!r}",
     )
 
     print("  " + "=" * 66)

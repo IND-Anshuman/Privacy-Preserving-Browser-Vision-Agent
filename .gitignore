@@ -16,3 +16,4 @@ bench/l3rec_*.html
 # secrets: never commit the configured .env
 .env
 !.env.example
+extension/out-manual/

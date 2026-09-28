@@ -97,7 +97,12 @@ _RAW_ORIGINS = os.environ.get("VEIL_ALLOWED_ORIGINS", "").strip()
 
 if _RAW_ORIGINS.lower() in {"*", "null", ""}:
     if _RAW_ORIGINS == "":
-        _ALLOWED = []
+        _ALLOWED: list[Any] = []
+        # Must be defined on EVERY branch. The empty-origin path returns before
+        # the dev/else branches assign it, and a later `if not _ALLOWED and not
+        # _ALLOWED_REGEX` then raises NameError at import — so a server with no
+        # origins configured would fail to start at all.
+        _ALLOWED_REGEX: str | None = None
     else:
         # An explicit "*" is a configuration mistake, not an intent. Refusing it
         # means the failure mode is "the extension cannot connect" rather than
@@ -110,14 +115,35 @@ if _RAW_ORIGINS.lower() in {"*", "null", ""}:
         )
         raise SystemExit(2)
 elif _RAW_ORIGINS.lower() == "dev":
-    _ALLOWED = [
-        "chrome-extension://*",
-        "moz-extension://*",
-    ]
+    # A CORS regex must go in `allow_origin_regex`, NOT in `allow_origins`.
+    #
+    # This went wrong twice before this line was correct. First: the value was
+    # `["chrome-extension://*"]`, a glob, and Starlette compares allow_origins by
+    # exact string equality with no wildcard support — so it matched NOTHING and
+    # the extension was fully blocked while /health looked healthy. Second: a
+    # compiled `re.Pattern` placed in `allow_origins` fails the same way, since
+    # a Pattern never == a string. `allow_origin_regex` is the parameter that
+    # actually does pattern matching.
+    #
+    # The security property is preserved exactly: a web page origin
+    # (https://…) cannot satisfy either pattern, so `dev` remains narrower than
+    # "*" and still excludes every http/https page.
+    _ALLOWED_REGEX: str | None = (
+        r"^(?:chrome-extension://[a-z]{32}"
+        r"|moz-extension://[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
+        r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    )
+    _ALLOWED = []
+    log.info(
+        "VEIL_ALLOWED_ORIGINS=dev — allowing chrome-extension and moz-extension "
+        "origins of the correct shape. Web pages (http/https origins) are "
+        "still refused."
+    )
 else:
     _ALLOWED = [o.strip() for o in _RAW_ORIGINS.split(",") if o.strip()]
+    _ALLOWED_REGEX = None
 
-if not _ALLOWED:
+if not _ALLOWED and not _ALLOWED_REGEX:
     log.warning(
         "No CORS origins configured: the API will accept same-origin and "
         "non-browser callers only. A browser extension must be added to "
@@ -127,6 +153,10 @@ if not _ALLOWED:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED,
+    # Pattern matching happens HERE, not in allow_origins. Passing a compiled
+    # Pattern in allow_origins looks reasonable and matches nothing, because
+    # Starlette compares that list by exact string equality.
+    allow_origin_regex=_ALLOWED_REGEX,
     allow_methods=["GET", "POST"],
     allow_headers=["content-type"],
     # No cookies, no credentials: nothing here is session-authenticated, and
