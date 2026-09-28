@@ -459,6 +459,39 @@ npx vite-node bench/measure_leakage.ts         # serialised-text vs pixel-box au
 cd .. && ./.venv/Scripts/python.exe bench/run_metrics.py
 ```
 
+### Reviewing the side panel
+
+The UI is reviewable without a real page, and the check that matters is numeric:
+
+```bash
+cd extension && VEIL_OUT_DIR=.review npx wxt build   # .review, not .output
+cd .. && ./.venv/Scripts/python.exe bench/make_panel_preview.py
+./.venv/Scripts/python.exe bench/serve_preview.py --port 8741
+# open http://127.0.0.1:8741/panel_preview.html?state=confirm
+./.venv/Scripts/python.exe bench/check_panel_layout.py --port 8741
+```
+
+`?state=empty|busy|confirm|full` drives representative states through the real
+render path. `check_panel_layout.py` asserts nothing overflows at 400, 360 and
+320px across all four and exits non-zero on failure.
+
+`VEIL_OUT_DIR` is a Windows necessity, not a convenience: a process that once
+held a working directory inside `.output/chrome-mv3` keeps a handle on it after
+exiting, and every later build then fails with `EBUSY: rmdir` on an empty
+directory. WXT 0.19 has no `--outDir` flag, so the override lives in
+`wxt.config.ts`. The default is unchanged.
+
+### The approval gate
+
+The panel's most important element is the one that was missing. The system halts
+a destructive step and waits for `content:confirm`; the service worker and the
+content script both handled that message, and **nothing in the UI could send
+it**. A destructive action therefore halted forever with no way forward — a
+safety mechanism that is unreachable is worse than none, because it looks
+handled. `panel.tsx:resolveConfirm` is now the other half of that loop, and
+"No, skip it" sits beside "Yes, do it" because a refusal path that is harder to
+reach than consent is a refusal nobody uses.
+
 Benchmarks that need a browser (the L3 canvas measurement) generate a page you
 open directly; `bench/l3_canvas.html` is self-contained.
 

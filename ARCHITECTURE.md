@@ -192,6 +192,8 @@ raw frame ──► [in-memory only] ──► classification ──► redactio
 - The raw frame **never** crosses a function boundary that can reach `fetch`/`XMLHttpRequest`/`sendBeacon`/WebRTC. Enforce with a strict CSP on the offscreen document (`connect-src` limited to the agent origin) and by keeping the raw buffer in a closure that is nulled after compositing.
 - The client signs/hashes the redaction manifest and sends it with the request, so **the server is verifiably aware of the redaction scheme** — directly satisfying the PS wording, and it doubles as a tamper-evidence story.
 - The side panel shows a **privacy ledger**: every outbound request, byte count, redaction count, and a side-by-side "what the server saw" thumbnail. This is the single highest-ROI demo artifact; judges can verify the claim themselves in ten seconds.
+- The side panel is the agent's **entire** user interface: ask, watch, approve. Three tabs — Agent (conversation, step list, approval gate), Privacy (what was hidden, what the assistant received, byte count), Timeline (per-stage timing and waterfall).
+- **The approval gate is the load-bearing part of that UI.** §4 requires a destructive step to become `ask_user`, and the client halts and waits for `content:confirm`. The service worker and content script both handle that message; if no UI can *send* it, a destructive action halts forever with no way forward, and a safety mechanism that is unreachable is worse than none because it looks handled. Declining must be as prominent as approving — a refusal path that is harder to reach than consent is a refusal nobody uses.
 
 ### 6.4 Leakage audit (report it as a metric — nobody does this)
 Redaction precision measured only as "did you draw boxes" is gameable. Report instead:

@@ -1,43 +1,126 @@
 /**
- * Side panel — the demo surface. ARCHITECTURE.md §6.3, §7, §11.
+ * The agent UI. ARCHITECTURE.md §6.3, §7, §11.
  *
- * This is the artifact judges verify in ten seconds: a privacy ledger showing
- * every outbound byte count and every item hidden, a latency waterfall, and a
- * live resource HUD. Copy is user-value only — never "redaction pipeline",
- * never "L2 NER", never "gate".
+ * This is the artifact a judge reads in ten seconds, and the artifact a user
+ * actually operates the agent through. Three jobs:
+ *
+ *   1. ASK — say what you want done to this page.
+ *   2. WATCH — see what the agent is doing, step by step, in order.
+ *   3. APPROVE — say yes or no to anything consequential.
+ *
+ * That third one was missing, and its absence was a real defect rather than a
+ * missing nicety. The system halts a destructive step and waits for
+ * `content:confirm`; the service worker handles that message; the content
+ * script handles it. Nobody in the UI could ever SEND it. A destructive action
+ * therefore deadlocked — the agent halted forever with no way forward, and the
+ * only escape was closing the panel. The safety mechanism was unreachable, which
+ * makes it worse than having no safety mechanism, because it looks handled.
+ *
+ * So `approve` / `decline` below are load-bearing, not decoration.
+ *
+ * Copy rule, enforced throughout: the user sees what they GET, never how it
+ * works. "12 items hidden", never "L2 NER found 12 spans". "waiting for you",
+ * never "destructive guard tripped". A privacy tool that leaks its own internals
+ * in the interface is telling the user their threat model has more moving parts
+ * than they thought.
  */
 import { parseMessage, type VeilMessage } from '@/lib/messages'
 import type { ActionPlan, RedactionManifest } from '@/lib/schema'
 
-const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
+const $ = <T extends HTMLElement>(id: string): T | null => document.getElementById(id) as T | null
+
+/* ------------------------------------------------------------------ *
+ *  State
+ * ------------------------------------------------------------------ */
+
+type StepStatus = 'pending' | 'active' | 'done' | 'ask' | 'failed'
+
+interface Step {
+  action: string
+  target?: string
+  status: StepStatus
+  ms?: number
+  note?: string
+}
+
+interface Turn {
+  who: 'user' | 'agent' | 'note' | 'warn'
+  text: string
+}
+
+interface PendingConfirm {
+  runId: string
+  actionIndex: number
+  label: string
+}
 
 const state = {
-  redactions: 0,
-  bytesOut: 0,
+  turns: [] as Turn[],
+  steps: [] as Step[],
   stages: [] as Array<{ name: string; ms: number }>,
   plan: null as ActionPlan | null,
   manifest: null as RedactionManifest | null,
-  aborted: false,
+  bytesOut: 0,
+  redactions: 0,
+  opaque: 0,
+  aborts: 0,
+  /** The confirmation the agent is blocked on, if any. */
+  confirm: null as PendingConfirm | null,
+  busy: false,
+  /** 'auto' sends a request; 'local' answers without one. */
+  mode: 'auto' as 'auto' | 'local',
 }
 
 /* ------------------------------------------------------------------ *
- *  Actions
+ *  Outbound
  * ------------------------------------------------------------------ */
 
-function run(tier: 'T0' | 'T1'): void {
-  const intent = ($<HTMLTextAreaElement>('intent')).value.trim()
-  if (!intent) {
-    render()
-    return
-  }
+function send(msg: VeilMessage): void {
+  void chrome.runtime.sendMessage(msg).catch(() => undefined)
+}
+
+function runIntent(intent: string, tier: 'T0' | 'T1'): void {
+  if (!intent || state.busy) return
+  state.steps = []
   state.stages = []
-  state.aborted = false
-  void chrome.runtime.sendMessage({ kind: 'panel:run', intent, tier } satisfies VeilMessage)
+  state.confirm = null
+  state.busy = true
+  push('user', intent)
+  send({ kind: 'panel:run', intent, tier })
   render()
 }
 
-$('run').addEventListener('click', () => run('T1'))
-$('local').addEventListener('click', () => run('T0'))
+/**
+ * Answer a pending confirmation. This is the function that was missing.
+ *
+ * `approved: false` matters as much as `true`: declining must be a first-class
+ * path that the user reaches as easily as approving, or people approve reflexively
+ * because refusing is the fiddly option.
+ */
+function resolveConfirm(approved: boolean): void {
+  const c = state.confirm
+  if (!c) return
+  state.confirm = null
+  // `label` is REQUIRED by the schema, not optional. The content script re-reads
+  // the live page to confirm the target is still the thing that was flagged, so
+  // the label travels with the decision rather than being re-derived from a
+  // stale snapshot.
+  send({
+    kind: 'content:confirm',
+    runId: c.runId,
+    actionIndex: c.actionIndex,
+    label: c.label,
+    approved,
+  })
+  push(approved ? 'note' : 'warn',
+    approved ? 'Approved. Carrying it out.' : 'Declined. Skipping that step.')
+  const step = state.steps[c.actionIndex]
+  if (step) {
+    step.status = approved ? 'active' : 'failed'
+    step.note = approved ? 'approved' : 'declined'
+  }
+  render()
+}
 
 /* ------------------------------------------------------------------ *
  *  Inbound
@@ -53,46 +136,225 @@ chrome.runtime.onMessage.addListener((raw) => {
 
 function apply(msg: VeilMessage): void {
   switch (msg.kind) {
-    case 'panel:stage':
+    case 'panel:stage': {
       state.stages.push({ name: friendlyStage(msg.stage), ms: Math.round(msg.ms) })
+      // "waiting for you: <label>" means the agent blocked. The confirm card
+      // arrives on its own message; this just narrates it.
       break
+    }
+
     case 'redact:ready': {
-      const m = msg.manifest
-      state.manifest = m
-      state.redactions = m.redactions.length
+      state.manifest = msg.manifest
+      state.redactions = msg.manifest.redactions.length
+      state.opaque = msg.manifest.redactions.filter((r) => r.cls === 'OPAQUE_REGION').length
       state.bytesOut += msg.bytes
       break
     }
+
     case 'redact:aborted':
-      state.aborted = true
-      state.stages.push({ name: 'stopped for safety', ms: 0 })
+      state.aborts += 1
+      state.busy = false
+      push('warn', 'Nothing was sent. This page looked unsafe to send, so I stopped before anything left the device.')
       break
+
     case 'panel:plan':
       state.plan = msg.plan
+      state.busy = false
+      adoptPlan(msg.plan)
       break
-    case 'panel:error':
-      state.aborted = true
-      state.stages.push({ name: 'stopped', ms: 0 })
-      break
-    case 'panel:ledger':
-      for (const e of msg.entries) {
-        const row = e as { bytesOut: number; redactions: number; label: string }
-        if (row.label.startsWith('aborted')) state.aborted = true
+
+    case 'panel:answer':
+      // The agent's reply. `tier` distinguishes a local answer, a normal one,
+      // and a request for confirmation.
+      if (msg.tier === 'confirm') {
+        push('warn', msg.text)
+      } else {
+        push(msg.tier === 'T0' ? 'note' : 'agent', msg.text)
+        state.busy = false
       }
       break
+
+    case 'execute:confirm_required':
+      // The agent is blocked and needs a decision. Render the gate.
+      state.confirm = { runId: msg.runId, actionIndex: msg.actionIndex, label: msg.label }
+      break
+
+    case 'execute:done': {
+      const step = state.steps[msg.actionIndex]
+      if (step) {
+        step.status = msg.ok ? 'done' : 'failed'
+        step.ms = Math.round(msg.ms)
+        step.note = msg.ok ? '' : msg.status
+      }
+      break
+    }
+
+    case 'panel:error':
+      state.busy = false
+      push('warn', msg.message || 'Something went wrong and I stopped.')
+      break
+
+    case 'panel:ledger':
+      for (const e of msg.entries) {
+        const row = e as { label?: string; bytesOut?: number }
+        if (typeof row.label === 'string' && row.label.startsWith('aborted')) {
+          state.aborts += 1
+        }
+      }
+      break
+
     default:
       break
   }
 }
 
-/** Pipeline internals are never shown to the user verbatim. */
+/** Turn a plan into the step list the user watches. */
+function adoptPlan(plan: ActionPlan): void {
+  state.steps = plan.steps.map((s) => ({
+    action: s.action,
+    target: s.target?.mark !== undefined ? `marked element ${s.target.mark}` : s.target?.name,
+    status: s.action === 'ask_user' ? 'ask' : 'pending',
+    note: s.reason,
+  }))
+}
+
+/* ------------------------------------------------------------------ *
+ *  Presentation helpers
+ * ------------------------------------------------------------------ */
+
+/** Pipeline internals are never shown verbatim. */
 function friendlyStage(s: string): string {
   switch (s) {
     case 'snapshot': return 'reading the page'
     case 'capture+redact': return 'hiding sensitive items'
     case 'server': return 'working out what to do'
     case 'execute': return 'carrying it out'
-    default: return s
+    default:
+      return s.startsWith('waiting for you') ? 'waiting for you' : s
+  }
+}
+
+const VERBS: Record<string, string> = {
+  click: 'Click',
+  fill: 'Fill in',
+  focus: 'Focus',
+  select: 'Choose',
+  scroll: 'Scroll',
+  hover: 'Hover over',
+  navigate: 'Go to',
+  extract: 'Read',
+  wait_for: 'Wait for',
+  ask_user: 'Ask you',
+  none: 'Do nothing',
+}
+
+function verb(a: string): string {
+  return VERBS[a] ?? a.replace(/_/g, ' ')
+}
+
+function humanClass(cls: string): string {
+  return cls.toLowerCase().replace(/_/g, ' ')
+}
+
+/** Per-class dot colours. Kept here rather than inline so the palette is one list. */
+const TINTS: Record<string, string> = {
+  PASSWORD: '#334155',
+  AADHAAR: '#b45309',
+  PAN: '#b45309',
+  GSTIN: '#b45309',
+  IFSC: '#b45309',
+  IBAN: '#b45309',
+  BANK_ACCOUNT: '#b45309',
+  CREDIT_CARD: '#b45309',
+  PASSPORT: '#b45309',
+  DL: '#b45309',
+  PERSON: '#0f766e',
+  EMAIL: '#0e7490',
+  PHONE: '#0e7490',
+  ADDRESS: '#0e7490',
+  API_KEY: '#7c2d12',
+  IP_ADDRESS: '#7c2d12',
+  DOB: '#1e3a8a',
+  FACE: '#4c1d95',
+  OPAQUE_REGION: '#475569',
+}
+
+const BAR = ['#0f766e', '#1e3a8a', '#b45309', '#4c1d95', '#0e7490', '#7c2d12', '#334155']
+
+function push(who: Turn['who'], text: string): void {
+  if (!text) return
+  state.turns.push({ who, text })
+  // Keep the DOM bounded. A runaway loop should not grow the panel without
+  // limit; the last few turns are what a person is actually reading.
+  if (state.turns.length > 60) state.turns = state.turns.slice(-40)
+}
+
+/* ------------------------------------------------------------------ *
+ *  Tabs
+ * ------------------------------------------------------------------ */
+
+let active: 'agent' | 'privacy' | 'timeline' = 'agent'
+
+for (const name of ['agent', 'privacy', 'timeline'] as const) {
+  $(`tab-${name}`)?.addEventListener('click', () => {
+    active = name
+    for (const n of ['agent', 'privacy', 'timeline'] as const) {
+      const tab = $(`tab-${n}`)
+      const panel = $(`p-${n}`)
+      if (tab) tab.setAttribute('aria-selected', String(n === name))
+      if (panel) panel.hidden = n !== name
+    }
+  })
+}
+
+/* ------------------------------------------------------------------ *
+ *  Wiring
+ * ------------------------------------------------------------------ */
+
+$('run')?.addEventListener('click', () => {
+  const el = $<HTMLTextAreaElement>('intent')
+  runIntent(el?.value.trim() ?? '', 'T1')
+})
+$('local')?.addEventListener('click', () => {
+  const el = $<HTMLTextAreaElement>('intent')
+  runIntent(el?.value.trim() ?? '', 'T0')
+})
+$('intent')?.addEventListener('keydown', (e) => {
+  // Enter sends, Shift+Enter is a newline. The standard chat contract, and the
+  // one users arrive already knowing.
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    $('run')?.click()
+  }
+})
+
+const SUGGESTIONS = [
+  'Fill the fields I can see, stop before submitting',
+  'What is on this page?',
+  'Find the next step and stop there',
+]
+
+function renderChips(): void {
+  const card = $('chips-card')
+  const box = $('chips')
+  if (!card || !box) return
+  if (state.turns.length > 0) {
+    card.hidden = true
+    return
+  }
+  card.hidden = false
+  box.innerHTML = ''
+  for (const s of SUGGESTIONS) {
+    const b = document.createElement('button')
+    b.className = 'chip'
+    b.type = 'button'
+    b.textContent = s
+    b.addEventListener('click', () => {
+      const el = $<HTMLTextAreaElement>('intent')
+      if (el) el.value = s
+      $('run')?.click()
+    })
+    box.appendChild(b)
   }
 }
 
@@ -100,95 +362,264 @@ function friendlyStage(s: string): string {
  *  Render
  * ------------------------------------------------------------------ */
 
-const TINTS: Record<string, string> = {
-  PASSWORD: '#1e293b',
-  PERSON: '#0f766e',
-  EMAIL: '#0e7490',
-  PHONE: '#0e7490',
-  ADDRESS: '#0e7490',
-  CREDIT_CARD: '#7c2d12',
-  AADHAAR: '#7c2d12',
-  PAN: '#7c2d12',
-  BANK_ACCOUNT: '#7c2d12',
-  DOB: '#1e3a8a',
-  FACE: '#4c1d95',
+function render(): void {
+  renderThread()
+  renderPending()
+  renderChips()
+  renderPrivacy()
+  renderTimeline()
+  renderBusy()
 }
 
-const COLORS = ['#0f766e', '#1e3a8a', '#b45309', '#4c1d95', '#0e7490', '#7c2d12', '#334155']
+function renderBusy(): void {
+  const run = $<HTMLButtonElement>('run')
+  const local = $<HTMLButtonElement>('local')
+  // While a confirmation is pending the ONLY useful action is approve/decline.
+  // Leaving the run buttons live invites starting a second run mid-decision,
+  // which is how an agent ends up with two interleaved plans.
+  const blocked = state.confirm !== null
+  if (run) run.disabled = state.busy || blocked
+  if (local) local.disabled = state.busy || blocked
+  const conn = $('conn')
+  if (conn) {
+    const t = state.busy ? 'working' : state.confirm ? 'waiting' : 'ready'
+    conn.textContent = t
+    conn.setAttribute('data-state', state.confirm ? 'local' : state.busy ? 'local' : 'ready')
+  }
+}
 
-function render(): void {
-  // 1. privacy headline
-  $('hidden').textContent = `${state.redactions} item${state.redactions === 1 ? '' : 's'} hidden`
-  $('bytes').innerHTML = state.aborted
-    ? `<span class="warn">Nothing was sent — this page looked unsafe to send.</span>`
-    : state.bytesOut > 0
-      ? `Sent ${(state.bytesOut / 1024).toFixed(1)} KB, all of it already hidden.`
-      : 'nothing sent yet'
+function renderThread(): void {
+  const box = $('thread')
+  if (!box) return
+  box.innerHTML = ''
 
-  // 2. legend of what was hidden
-  const legend = $('legend')
-  legend.innerHTML = ''
-  if (state.manifest) {
-    const counts = new Map<string, number>()
-    for (const r of state.manifest.redactions) counts.set(r.cls, (counts.get(r.cls) ?? 0) + 1)
-    for (const [cls, n] of counts) {
-      const el = document.createElement('span')
-      el.className = 'pill'
-      el.innerHTML = `<i class="legend-dot" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${TINTS[cls] ?? '#334155'};margin-right:5px"></i>${n} ${humanClass(cls)}`
-      legend.appendChild(el)
+  if (state.turns.length === 0) {
+    const e = document.createElement('div')
+    e.className = 'empty'
+    e.innerHTML =
+      '<div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
+      '<h3>Tell me what to do on this page</h3>' +
+      '<p>Everything sensitive is hidden on this device before anything is sent. You approve anything consequential.</p>'
+    box.appendChild(e)
+    return
+  }
+
+  for (const t of state.turns) {
+    const el = document.createElement('div')
+    el.className = `msg ${t.who}`
+    const who = document.createElement('div')
+    who.className = 'who'
+    who.textContent = t.who === 'user' ? 'You' : t.who === 'agent' ? 'Assistant' : t.who === 'note' ? 'Done' : 'Stopped'
+    const body = document.createElement('div')
+    body.className = 'body'
+    body.textContent = t.text
+    el.append(who, body)
+    box.appendChild(el)
+  }
+  // Keep the newest turn in view without yanking the page on every repaint.
+  const last = box.lastElementChild
+  last?.scrollIntoView({ block: 'nearest' })
+}
+
+function renderPending(): void {
+  const box = $('pending')
+  if (!box) return
+  box.innerHTML = ''
+  const c = state.confirm
+  if (!c) return
+
+  const card = document.createElement('div')
+  card.className = 'confirm'
+  card.setAttribute('role', 'alertdialog')
+  card.setAttribute('aria-label', 'Confirmation needed')
+
+  const h = document.createElement('div')
+  h.className = 'ch'
+  h.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>' +
+    '<span>This one needs your say-so</span>'
+
+  const b = document.createElement('div')
+  b.className = 'cb'
+  b.textContent = c.label
+
+  const row = document.createElement('div')
+  row.className = 'crow'
+  const yes = document.createElement('button')
+  yes.className = 'grow'
+  yes.textContent = 'Yes, do it'
+  yes.addEventListener('click', () => resolveConfirm(true))
+  const no = document.createElement('button')
+  no.className = 'ghost grow'
+  no.textContent = 'No, skip it'
+  no.addEventListener('click', () => resolveConfirm(false))
+  row.append(no, yes)
+
+  card.append(h, b, row)
+  box.appendChild(card)
+  // Move focus to the decision, not the page: a person who did not notice the
+  // prompt would otherwise be tabbing through the timeline.
+  yes.focus()
+}
+
+function renderPrivacy(): void {
+  const h = $('hidden')
+  if (h) h.textContent = String(state.redactions)
+  const b = $('bytes')
+  if (b) b.textContent = state.bytesOut > 0 ? `${(state.bytesOut / 1024).toFixed(1)} KB` : '0 KB'
+  const a = $('aborts')
+  if (a) {
+    a.textContent = String(state.aborts)
+    a.className = state.aborts > 0 ? 'v warnv' : 'v'
+  }
+
+  const saw = $('saw')
+  if (saw) {
+    if (!state.manifest) {
+      saw.textContent = 'No request sent yet.'
+    } else {
+      const toks = state.manifest.redactions.slice(0, 8).map((r) => r.placeholder.token).join(' ')
+      saw.innerHTML =
+        `The assistant received your page structure, ${state.redactions} hidden item` +
+        `${state.redactions === 1 ? '' : 's'}, and a picture with everything sensitive already blocked out.` +
+        (toks ? `<br><span class="mono muted">It saw: ${toks}${state.redactions > 8 ? ' …' : ''}</span>` : '')
     }
   }
 
-  // 3. what the server saw
-  $('saw').innerHTML = state.manifest
-    ? `The server received your page structure, ${state.manifest.redactions.length} hidden item${state.manifest.redactions.length === 1 ? '' : 's'}, and a redacted picture.<br>
-       <span class="muted">Placeholders it saw: ${state.manifest.redactions.slice(0, 6).map((r) => r.placeholder.token).join(' ') || 'none'}${state.manifest.redactions.length > 6 ? ' …' : ''}</span>`
-    : 'no request yet'
-
-  const log = $('ledger')
-  log.innerHTML = ''
-  for (const s of state.stages) {
-    const d = document.createElement('div')
-    d.textContent = `${s.name} — ${s.ms} ms`
-    log.appendChild(d)
+  const card = $('legend-card')
+  const box = $('legend')
+  if (card && box) {
+    if (!state.manifest || state.manifest.redactions.length === 0) {
+      card.hidden = true
+    } else {
+      card.hidden = false
+      box.innerHTML = ''
+      const counts = new Map<string, number>()
+      for (const r of state.manifest.redactions) counts.set(r.cls, (counts.get(r.cls) ?? 0) + 1)
+      for (const [cls, n] of [...counts].sort((a, b) => b[1] - a[1])) {
+        const el = document.createElement('span')
+        el.className = 'pill'
+        const label = cls === 'OPAQUE_REGION' ? 'could not be read' : humanClass(cls)
+        el.innerHTML = `<i style="background:${TINTS[cls] ?? '#475569'}"></i>${n} ${label}`
+        box.appendChild(el)
+      }
+    }
   }
 
-  // 4. waterfall
+  const mode = $('p-mode')
+  if (mode) mode.textContent = state.mode === 'local' ? 'off — answering here' : 'on, after hiding sensitive items'
+  const op = $('p-opaque')
+  if (op) op.textContent = state.opaque > 0 ? `${state.opaque} blocked entirely` : 'all regions readable'
+}
+
+function renderTimeline(): void {
+  // waterfall
+  const wfCard = $('wf-card')
   const wf = $('wf')
-  wf.innerHTML = ''
-  const total = state.stages.reduce((a, s) => a + s.ms, 0) || 1
-  state.stages.forEach((s, i) => {
-    const seg = document.createElement('span')
-    seg.style.width = `${(s.ms / total) * 100}%`
-    seg.style.background = COLORS[i % COLORS.length] ?? '#0f766e'
-    seg.title = `${s.name}: ${s.ms} ms`
-    wf.appendChild(seg)
-  })
+  const total = state.stages.reduce((s, x) => s + x.ms, 0)
+  if (wfCard && wf) {
+    if (state.stages.length === 0) {
+      wfCard.hidden = true
+    } else {
+      wfCard.hidden = false
+      wf.innerHTML = ''
+      state.stages.forEach((s, i) => {
+        const seg = document.createElement('span')
+        seg.style.width = `${total > 0 ? (s.ms / total) * 100 : 0}%`
+        seg.style.background = BAR[i % BAR.length] ?? '#0f766e'
+        seg.title = `${s.name}: ${s.ms} ms`
+        wf.appendChild(seg)
+      })
+    }
+  }
 
-  const tbody = $('stages').querySelector('tbody') as HTMLTableSectionElement
-  tbody.innerHTML = ''
+  // plan
+  const planCard = $('plan-card')
+  const plan = $('plan')
+  if (planCard && plan) {
+    if (state.steps.length === 0) {
+      planCard.hidden = true
+    } else {
+      planCard.hidden = false
+      plan.innerHTML = ''
+      state.steps.forEach((s, i) => {
+        const row = document.createElement('div')
+        row.className = 'step'
+        row.dataset.status = s.status
+        const n = document.createElement('div')
+        n.className = 'n'
+        n.textContent = String(i + 1)
+        const what = document.createElement('div')
+        what.className = 'what'
+        const b = document.createElement('b')
+        b.textContent = verb(s.action)
+        what.appendChild(b)
+        if (s.target) {
+          const sp = document.createElement('span')
+          sp.textContent = ` ${s.target}`
+          what.appendChild(sp)
+        }
+        if (s.note && s.status !== 'pending') {
+          const sp = document.createElement('span')
+          sp.textContent = ` — ${s.note}`
+          what.appendChild(sp)
+        }
+        const ms = document.createElement('div')
+        ms.className = 'ms'
+        ms.textContent = s.ms !== undefined ? `${s.ms} ms` : ''
+        row.append(n, what, ms)
+        plan.appendChild(row)
+      })
+    }
+  }
+
+  // per-stage rows
+  const tl = $('timeline')
+  if (!tl) return
+  tl.innerHTML = ''
+  if (state.stages.length === 0) {
+    const e = document.createElement('div')
+    e.className = 'muted'
+    e.style.padding = '0 13px 13px'
+    e.textContent = 'Nothing has run yet.'
+    tl.appendChild(e)
+    return
+  }
   for (const s of state.stages) {
-    const tr = document.createElement('tr')
-    tr.innerHTML = `<td>${s.name}</td><td>${s.ms} ms</td>`
-    tbody.appendChild(tr)
+    const r = document.createElement('div')
+    r.className = 'row'
+    const k = document.createElement('span')
+    k.className = 'k'
+    k.textContent = s.name
+    const v = document.createElement('span')
+    v.className = 'v'
+    v.textContent = s.ms > 0 ? `${s.ms} ms` : '—'
+    r.append(k, v)
+    tl.appendChild(r)
   }
-  if (state.stages.length) {
-    const tr = document.createElement('tr')
-    tr.innerHTML = `<td><strong>total</strong></td><td><strong>${Math.round(total)} ms</strong></td>`
-    tbody.appendChild(tr)
-  }
-
-  // 5. plan
-  if (state.plan) {
-    const tr = document.createElement('tr')
-    tr.innerHTML = `<td class="muted">plan</td><td class="muted">${state.plan.steps.map((s) => s.action).join(' → ')}</td>`
-    tbody.appendChild(tr)
-  }
+  const tot = document.createElement('div')
+  tot.className = 'row'
+  const tk = document.createElement('span')
+  tk.className = 'k'
+  tk.innerHTML = '<strong>Total</strong>'
+  const tv = document.createElement('span')
+  tv.className = 'v'
+  tv.innerHTML = `<strong>${Math.round(total)} ms</strong>`
+  tot.append(tk, tv)
+  tl.appendChild(tot)
 }
 
-function humanClass(cls: string): string {
-  return cls.toLowerCase().replace(/_/g, ' ')
-}
+/* ------------------------------------------------------------------ *
+ *  Boot
+ * ------------------------------------------------------------------ */
 
-// Initial paint.
+$('local')?.addEventListener('click', () => {
+  state.mode = 'local'
+})
+$('run')?.addEventListener('click', () => {
+  state.mode = 'auto'
+})
+
 render()

@@ -8,7 +8,13 @@ import { defineConfig } from 'wxt'
  */
 export default defineConfig({
   srcDir: '.',
-  outDir: '.output',
+  // `VEIL_OUT_DIR` is an escape hatch for the panel review harness only. On
+  // Windows a background process that once held a working directory inside
+  // `.output/chrome-mv3` keeps a handle on it after exiting, and the next build
+  // then fails with `EBUSY: rmdir .output/chrome-mv3` on an otherwise empty
+  // directory. WXT 0.19 has no --outDir flag, so the override lives here.
+  // Default is unchanged.
+  outDir: process.env.VEIL_OUT_DIR ?? '.output',
   manifestVersion: 3,
   modulesDir: 'wxt',
   entrypointsDir: 'entrypoints',
