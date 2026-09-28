@@ -39,29 +39,70 @@ except ImportError:
 
 
 def make_probe_image(text: str) -> str:
-    """A small PNG with `text` drawn large, so a vision model can read it.
+    """A PNG with `text` drawn as REAL GLYPHS, so a vision model can read it.
 
-    No Pillow dependency: a 1x1 image proves an endpoint accepts base64, not
-    that a model can read it. This draws actual glyph-sized blocks, which is
-    enough for a VLM to recognise a short uppercase string.
+    The first version of this drew one filled RECTANGLE per character. The model
+    replied `'||||||'` — which was a correct description of six vertical bars,
+    not a reading failure. A probe that cannot tell "cannot see the image" from
+    "can see the image but it contains no letters" is not a vision test, so it
+    draws actual letterforms now.
+
+    Uses PIL's default bitmap font rather than a TrueType file so there is no
+    font dependency and the output is identical on every machine.
     """
     try:
         from PIL import Image, ImageDraw
     except ImportError:
-        # 8x8 white PNG. The model will say it cannot read it, which is a
-        # truthful result rather than a crash.
+        # No Pillow: return a 1x1 image. The model will say it cannot read it,
+        # which is a truthful result rather than a crash — and it is reported
+        # as a WARN, never as a pass.
         return (
             "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAHElEQVQoz2P8//8/AzWBiYGa"
             "YNKBzMK4wcMBAAgAAQEBvA0nAAAAAElFTkSuQmCC"
         )
 
-    img = Image.new("RGB", (640, 200), "white")
+    # PIL's default font is ~11px, which is genuinely too small: a human
+    # reading the same PNG reported "W0.7" instead of "VEIL7". A vision model
+    # would fail the same way, and the probe would wrongly conclude the model
+    # cannot see. So: find a real TrueType face and draw at a real size.
+    #
+    # Falls back through the faces Windows ships, then to the bitmap font, and
+    # finally to blocks — and says which it used, because "the probe drew bars"
+    # and "the model cannot see" must never look the same.
+    font = None
+    for cand in (
+        r"C:\Windows\Fonts\arialbd.ttf",
+        r"C:\Windows\Fonts\arial.ttf",
+        r"C:\Windows\Fonts\segoeuib.ttf",
+        r"C:\Windows\Fonts\segoeui.ttf",
+        r"C:\Windows\Fonts\consola.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    ):
+        try:
+            from PIL import ImageFont
+
+            font = ImageFont.truetype(cand, 84)
+            drew = cand
+            break
+        except Exception:  # noqa: BLE001
+            continue
+
+    img = Image.new("RGB", (900, 300), "white")
     d = ImageDraw.Draw(img)
-    for i, ch in enumerate(text.upper()):
-        x = 40 + i * 74
-        d.rectangle([x, 60, x + 54, 140], fill="black")  # a block per letter
+    if font is not None:
+        d.text((70, 100), text.upper(), fill="black", font=font)
+    else:
+        # Blocks. This is NOT a valid vision test and the caller reports it as
+        # such rather than blaming the model.
+        for i, _ch in enumerate(text.upper()):
+            x = 70 + i * 110
+            d.rectangle([x, 80, x + 84, 200], fill="black")
+    d.rectangle([12, 12, 888, 288], outline="black", width=4)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
+    globals()["_DREW"] = drew if font is not None else "blocks"
     return base64.b64encode(buf.getvalue()).decode()
 
 

@@ -442,6 +442,11 @@ async def step(req: StepRequest, request: Request) -> StreamingResponse:
         image_b64=effective_image,
         session_id=req.session_id,
         turn=req.turn,
+        # The schema allows 12 steps. At ~100 tokens per step with a reason
+        # string, 512 truncates a long plan mid-JSON — which arrives at the
+        # client as an unparseable plan rather than as a short one. Measured
+        # against a 30B vision model; see bench/measure_grounding.py.
+        max_tokens=int(os.environ.get("VEIL_LLM_MAX_TOKENS", "1536")),
     )
 
     async def gen() -> AsyncIterator[str]:

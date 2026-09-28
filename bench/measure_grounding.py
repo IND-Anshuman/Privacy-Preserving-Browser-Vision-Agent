@@ -150,6 +150,10 @@ def _make_request(form: dict, intent: str) -> tuple[PlanRequest, set[int]]:
             image_b64=None,  # structure-only probe; the image path is exercised live
             session_id=manifest["session_id"],
             turn=0,
+            # 512 was the old cap and it truncated a plan mid-JSON on the first
+            # live run against a 30B model. A 12-step ActionPlan with reasons is
+            # ~1200 tokens, so the cap has to clear that with room to spare.
+            max_tokens=1536,
         ),
         valid,
     )
@@ -239,8 +243,18 @@ async def run(turns: int) -> int:
         s["in_tok"] = res.input_tokens
         s["out_tok"] = res.output_tokens
         s["usd"] = res.usd(p.caps)
+        # A plan that stops at exactly max_tokens is TRUNCATED, not invalid.
+        # Conflating the two is how "SCHEMA FAILURE — set strict" gets printed
+        # for a model that is fine and simply ran out of room. The first live
+        # grounding run reported 5/6 with a "schema failure" verdict for exactly
+        # this reason: out_tok was 512 — the cap, to the token.
+        s["truncated"] = res.output_tokens >= req.max_tokens - 2
+        if s["truncated"] and not s["parses"]:
+            s["failure"] = "truncated at max_tokens"
+        elif not s["parses"]:
+            s["failure"] = "did not match the ActionPlan schema"
         rows.append(s)
-        flag = "INV" if s["invented_marks"] else "   "
+        flag = "INV" if s["invented_marks"] else ("TRUNC" if s["truncated"] else "    ")
         print(
             f"  {path.stem:10} parse={'Y' if s['parses'] else 'N'} "
             f"action={(s['action'] or '-'):9} mark={'Y' if s['uses_mark'] else 'N'} "
@@ -275,13 +289,25 @@ async def run(turns: int) -> int:
     print("-" * 74)
 
     verdict = []
-    if parsed < n:
-        verdict.append("SCHEMA FAILURE — plans are being rejected. Set VEIL_LLM_MODE=strict, "
-                       "or accept that the validator is your only gate.")
+    truncated = [r for r in rows if r.get("truncated")]
+    genuinely_invalid = [r for r in rows if not r["parses"] and not r.get("truncated")]
+
+    if genuinely_invalid:
+        verdict.append(
+            f"SCHEMA FAILURE in {len(genuinely_invalid)}/{n} turns — output did not match "
+            "the ActionPlan schema. Check VEIL_LLM_MODE; the validator is currently the "
+            "only gate."
+        )
+    if truncated:
+        verdict.append(
+            f"TRUNCATION in {len(truncated)}/{n} turns — the model hit the {512}-token "
+            "output cap mid-plan. Raise max_tokens, or the plan is cut off before it is "
+            "complete. This is NOT a schema problem and NOT a grounding problem."
+        )
     if used == 0 and n:
         verdict.append("NO MARK USE — this model describes pages but does not target elements "
                        "by number. Do not ship it as the planner.")
-    if invented:
+    elif invented:
         verdict.append(f"INVENTED MARKS in {invented}/{n} turns. A mark that does not exist is a "
                        "click on the wrong thing; the client rejects these, but treat it as a "
                        "grounding failure, not a client bug.")

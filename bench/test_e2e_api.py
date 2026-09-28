@@ -126,7 +126,22 @@ def main() -> int:
     check("a turn returns a schema-valid plan", plan.get("steps") is not None)
     check("the plan carries the session id", plan.get("session_id") == sid)
     first = plan["steps"][0]["action"]
-    check("the mock's confident plan was not escalated", first in ("click", "none"), first)
+    # Not `first == "click"`: the mock returns a click, but a REAL model
+    # returns whatever the page warrants — a `fill`, a `none`, an `ask_user`.
+    # Asserting the mock's specific action made this test fail against a working
+    # live endpoint, which is the wrong signal. What matters is that the action
+    # is one the schema allows and that a confident plan was not downgraded to
+    # ask_user by the escalation gate.
+    check("the first action is a real one", first in (
+        "click", "fill", "focus", "select", "scroll", "hover",
+        "navigate", "extract", "wait_for", "none"), first)
+    conf = float(plan.get("confidence") or 0)
+    if conf >= 0.55:
+        check("a confident plan was NOT escalated to ask_user",
+              first != "ask_user", f"conf={conf} action={first}")
+    else:
+        check("a low-confidence plan WAS escalated to ask_user", first == "ask_user",
+              f"conf={conf} action={first}")
     check("confidence passed through", isinstance(plan.get("confidence"), (int, float)))
 
     # The loop cap: three failures must stop the agent handing back control.
