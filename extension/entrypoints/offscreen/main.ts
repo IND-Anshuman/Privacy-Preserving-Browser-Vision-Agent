@@ -10,7 +10,7 @@ import type { PiiClass } from '@/lib/schema'
 import { detectCaptureCaps, chooseMode, createCapturer, capToWidth, type CaptureCaps, type Capturer } from './capture'
 import { initDevice, runL2, getDeviceInfo, getSession, getLoadTimings, getLoadErrors, MODEL_IDS, PromptApiTier0 } from './models'
 import { mapL2Label } from './ner'
-import { redactFrame } from './redact'
+import { redactFrame, type RedactItem } from './redact'
 import { PressureMonitor, planFor as pressurePlan, type CascadePlan } from './pressure'
 import {
   dhash, evaluateGate, commitGate, newGateState, toLumaThumbnail, domStructuralHash, fnv1a,
@@ -18,7 +18,7 @@ import {
   type GateState, type GateDecision,
 } from '@/lib/framediff'
 import { nerBatchSize } from '@/lib/device'
-import { l2Enabled } from '@/lib/l2policy'
+import { l2Enabled, admitL2 } from '@/lib/l2policy'
 import { type MarkAssignment } from '@/lib/som'
 
 const log = (m: string): void => {
@@ -226,7 +226,10 @@ async function runCapture(
     // still attempting a 27 MB model load on every single cycle. [audit 2.4]
     const useL2 = l2Enabled(plan?.L2 ?? true)
     const useL3 = plan?.L3 ?? true
-    const items = [...domItems]
+    // Typed explicitly: without it TypeScript infers the element type from the
+    // first spread, and every later field (recoveredFromPixels) becomes an
+    // excess-property error rather than being checked against RedactInput.
+    const items: RedactItem[] = [...domItems]
     const timings: Record<string, number> = {}
 
     if (useL2) {
@@ -263,10 +266,111 @@ async function runCapture(
     if (useL3) {
       // Text-in-canvas / faces. Pixels only; DOM rules cannot see these (§5).
       const mod = await import('./models')
+
       const faces = await mod.runL3Faces(source as unknown as ImageBitmap)
       timings['l3face'] = faces.ms
       for (const f of faces.boxes) {
         items.push({ id: `l3f-${items.length}`, cls: 'FACE', box: f.box, score: f.score, source: 'L3' })
+      }
+
+      /**
+       * §5's "re-run L1/L2 on recovered strings" — the step that was written,
+       * reviewed, and had zero callers. Canvas and video text is invisible to
+       * every DOM rule, and a region detector alone only says "there is text
+       * here"; it does not say WHAT. So:
+       *
+       *   1. find text-dense regions          (geometric, cheap)
+       *   2. OCR each crop                    (TrOCR, on regions only)
+       *   3. re-run L1 + L2 on the recovered  (a model we already ship)
+       *      strings
+       *   4. emit a detection for each hit
+       *
+       * Step 3 is the point. A detected region is blanked regardless, so the
+       * fail-closed rule already protects the pixel; what the recovered string
+       * adds is a CLASS, so the manifest and the server prompt can say what was
+       * found rather than "something was here".
+       *
+       * Failure is contained, not fatal: if the OCR model is missing or errors,
+       * the regions are still redacted, and the run reports why. A pixel layer
+       * that takes the whole request down because OCR is unavailable would be
+       * strictly worse than no pixel layer.
+       */
+      const regions = await mod.runL3Text(source as unknown as ImageBitmap)
+      timings['l3text'] = regions.ms
+      if (regions.available) {
+        const recovered = await mod.ocrRegions(source as unknown as ImageBitmap, regions.boxes)
+        timings['l3ocr'] = regions.ms
+
+        // A region with text is a region worth protecting even if no detector
+        // recognises the content: a captcha or a hand-written number will not
+        // match L1. Emit the OCR text itself so the placeholder channel can
+        // carry it.
+        for (const r of recovered) {
+          items.push({
+            id: `l3t-${items.length}`,
+            cls: 'TEXT_REGION',
+            box: r.box.box,
+            score: r.box.score,
+            source: 'L3',
+            text: r.text,
+          })
+        }
+
+        // Classify the recovered strings. L1 is ~1 ms and catches the exact
+        // formats (Aadhaar, PAN, IFSC, card) that a generic OCR pass tends to
+        // mangle into near-misses.
+        if (recovered.length > 0) {
+          const { runL1, fuseUnion } = await import('@/lib/pii')
+          const texts = recovered.map((r) => r.text)
+          for (let i = 0; i < recovered.length; i++) {
+            const t = texts[i]!
+            for (const hit of fuseUnion(runL1(t))) {
+              if (hit.cls === 'PASSWORD' || hit.score < 0.5) continue
+              items.push({
+                id: `l3r-${items.length}-${i}`,
+                cls: hit.cls,
+                box: recovered[i]!.box.box,
+                score: hit.score,
+                source: 'L3',
+                text: hit.text,
+                recoveredFromPixels: true,
+              })
+            }
+          }
+
+          // And L2 for the classes regex structurally cannot reach — a name
+          // drawn in a canvas is the canonical case.
+          if (useL2) {
+            const ner = await mod.runL2(texts)
+            if (ner.available) {
+              for (const s of ner.spans) {
+                const cls = mod.mapL2Label(s.label)
+                if (!cls || !admitL2(cls, s.score)) continue
+                // The model ran over `texts` as a batch of STRINGS, so a span's
+                // offsets are relative to its own row — but normaliseRows
+                // flattens the batch and loses which row that was. Rather than
+                // guess, attribute by containment. Each region is one text
+                // line and there are rarely more than a handful, so the box is
+                // coarse — and a coarse box is the safe direction: it redacts
+                // the line rather than part of it.
+                const owner =
+                  recovered.find((r) => r.text.includes(s.text.trim())) ?? recovered[0]!
+                items.push({
+                  id: `l3n-${items.length}`,
+                  cls,
+                  box: owner.box.box,
+                  score: s.score,
+                  source: 'L3',
+                  text: s.text,
+                  recoveredFromPixels: true,
+                })
+              }
+              timings['l3ner'] = ner.ms
+            }
+          }
+        }
+      } else {
+        log('l3: text-region detection unavailable; canvas remains fail-closed')
       }
     }
 

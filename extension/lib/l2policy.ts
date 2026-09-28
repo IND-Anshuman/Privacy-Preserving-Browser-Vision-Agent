@@ -78,3 +78,54 @@ export function l2Status(): string {
     ? `L2 active for: ${on.join(', ')} (measured: +11 PERSON found, precision cost on other classes)`
     : 'L2 off — see lib/l2policy.ts for the measured basis'
 }
+
+/* ================================================================== *
+ *  Input reduction — the M5 lever that actually worked
+ * ================================================================== */
+
+/**
+ * The formats L1 already matches exactly. If a string's PII-shaped content is
+ * one of these and it holds no plausible name, L2 has nothing to add.
+ *
+ * These are the load-bearing Indian identifiers plus the international ones,
+ * mirroring the regex layer in lib/pii.ts. Kept as a small explicit list rather
+ * than imported wholesale, because the question here is narrower: "is there any
+ * PII here that only a model could find?" — and PERSON is the only admitted
+ * class, so anything L1 owns is already covered.
+ */
+const L1_OWNED: readonly RegExp[] = [
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}\b/, // email
+  /\b[A-Z]{5}\d{4}[A-Z]\b/, // PAN
+  /\b[2-9]\d{3}[ -]?\d{4}[ -]?\d{4}\b/, // Aadhaar
+  /\b\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}\b/, // card
+  /\b[6-9]\d{9}\b/, // phone
+  /\b\d{4}\s?\d{4}\s?\d{4}\b/, // Aadhaar (spaced variant)
+]
+
+/**
+ * A plausible person name: two adjacent capitalised words.
+ *
+ * Deliberately generous. Its only job is to protect strings that might contain
+ * the one class L2 is admitted for; a false positive costs a model call on a
+ * harmless string, which is the cheap direction to be wrong in. Making it
+ * stricter would save calls and risk dropping a real name, which is the
+ * expensive direction.
+ */
+const MAYBE_NAMED = /\b[A-Z][a-z]{1,15}\s+[A-Z][a-z]{1,15}\b/
+
+/**
+ * Can this string be skipped without losing an admitted finding?
+ *
+ * True means: it contains at least one L1-owned identifier AND no plausible
+ * person name. Since PERSON is the only class `admitL2` lets through, L2's only
+ * possible contribution to such a string is a name, and the name test has
+ * already said no.
+ *
+ * Requires an L1-owned match rather than simply "no name", because a string
+ * with nothing at all in it is more likely to be noise that is cheaper to skip
+ * outright — but that case is handled by the caller's length filter, and
+ * over-reaching here would drop a bare name in a heading.
+ */
+export function l1CoversIt(s: string): boolean {
+  return L1_OWNED.some((r) => r.test(s)) && !MAYBE_NAMED.test(s)
+}

@@ -1,9 +1,9 @@
 window.__VEIL_METRICS__ = {
   "schema_version": "1.0.0",
-  "generated_at": "2026-09-27T18:40:29.425740+00:00",
+  "generated_at": "2026-09-28T15:26:07.116294+00:00",
   "corpus": {
     "forms": 20,
-    "instances": 248
+    "instances": 268
   },
   "M1_visual_context": {
     "metric": "M1",
@@ -28,14 +28,14 @@ window.__VEIL_METRICS__ = {
     "metric": "M2",
     "provenance": "MEASURED \u2014 real detector over 20 synthetic forms with exact ground truth",
     "micro": {
-      "precision": 0.9802,
-      "recall": 0.7984,
-      "f1": 0.88,
-      "tp": 198,
-      "fp": 4,
-      "fn": 50
+      "precision": 0.9641,
+      "recall": 0.8022,
+      "f1": 0.8758,
+      "tp": 215,
+      "fp": 8,
+      "fn": 53
     },
-    "macro_f1": 0.7671,
+    "macro_f1": 0.7459,
     "per_class": {
       "AADHAAR": {
         "precision": 0.8333,
@@ -46,12 +46,12 @@ window.__VEIL_METRICS__ = {
         "fn": 0
       },
       "ADDRESS": {
-        "precision": 0.5,
-        "recall": 0.5,
-        "f1": 0.5,
-        "tp": 2,
+        "precision": 0.9048,
+        "recall": 0.7917,
+        "f1": 0.8444,
+        "tp": 19,
         "fp": 2,
-        "fn": 2
+        "fn": 5
       },
       "API_KEY": {
         "precision": 1.0,
@@ -141,6 +141,14 @@ window.__VEIL_METRICS__ = {
         "fp": 0,
         "fn": 2
       },
+      "OPAQUE_REGION": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "tp": 0,
+        "fp": 4,
+        "fn": 0
+      },
       "ORG": {
         "precision": 0.0,
         "recall": 0.0,
@@ -192,8 +200,8 @@ window.__VEIL_METRICS__ = {
     },
     "by_channel": {
       "dom": {
-        "tp": 190,
-        "fn": 34,
+        "tp": 207,
+        "fn": 37,
         "fp": 0
       },
       "pixels": {
@@ -216,8 +224,8 @@ window.__VEIL_METRICS__ = {
       "PERSON": 24,
       "PHONE": 8,
       "BANK_ACCOUNT": 6,
+      "ADDRESS": 5,
       "EMAIL": 4,
-      "ADDRESS": 2,
       "MONEY": 2,
       "ORG": 2,
       "IP_ADDRESS": 2

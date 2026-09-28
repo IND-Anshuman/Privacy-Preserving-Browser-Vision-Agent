@@ -26,7 +26,7 @@ import { join } from 'node:path'
 import { JSDOM } from 'jsdom'
 import { hitsFromElement, runL1, fuseUnion, type ElementLike } from '../lib/pii'
 import { toLumaThumbnail, dhash, evaluateGate, commitGate, newGateState } from '../lib/framediff'
-import { Pseudonymizer } from './pseudonym_helper'
+import { Pseudonymizer } from '../lib/pseudonym'
 
 const CORPUS = join(__dirname, '..', '..', 'bench', 'corpus', 'synthetic')
 const RESULTS = join(__dirname, '..', '..', 'bench', 'results')

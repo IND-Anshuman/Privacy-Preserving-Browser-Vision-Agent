@@ -55,7 +55,16 @@ services:
     environment:
       VLLM_BASE_URL: http://vllm:8001
       VLLM_MODEL: ${VLLM_MODEL:-Qwen/Qwen2.5-VL-7B-Instruct}
-      VEIL_ALLOWED_ORIGINS: "*"
+      # Was "*", which let ANY web page the user visited POST to this server
+      # and receive an action plan. The server now refuses to start on a
+      # wildcard, so this must be a real origin list.
+      #
+      # For a locally-loaded unpacked extension, put its id here — it is stable
+      # across restarts, visible in chrome://extensions, and looks like
+      # `chrome-extension://<32 chars>`. For a demo where the id is not yet
+      # known, `dev` allows any extension origin and still excludes every
+      # http/https page.
+      VEIL_ALLOWED_ORIGINS: ${VEIL_ALLOWED_ORIGINS:-dev}
     ports:
       - "8000:8000"
     restart: unless-stopped

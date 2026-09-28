@@ -1,0 +1,23 @@
+{
+  "raw_texts": 818,
+  "unique_texts": 287,
+  "after_filter": 283,
+  "reduction_pct": 65.4,
+  "all_ms": 3071,
+  "reduced_ms": 1316,
+  "wall_clock_saved_pct": 57.2,
+  "spans_lost_total": 12,
+  "spans_lost_admitted": 0,
+  "spans_lost_rejected_class": 12,
+  "answer_preserving": true,
+  "lost_examples": [],
+  "classes": {
+    "PERSON": 275,
+    "EMAIL": 70,
+    "PHONE": 181,
+    "LOCATION": 183,
+    "ORG": 38,
+    "DATE": 1
+  },
+  "note": "Deterministic per-string inference, no batching. Batching was rejected: 1.20x best case and a batch-size-dependent token count."
+}

@@ -8,3 +8,7 @@ __pycache__/
 .venv/
 .hf-cache/
 .DS_Store
+
+# generated browser harnesses (rebuild with make_l3_harness.py / make_l3_recovery_harness.py)
+bench/l3_*.html
+bench/l3rec_*.html

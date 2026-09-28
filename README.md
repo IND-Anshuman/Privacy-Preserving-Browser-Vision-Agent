@@ -104,18 +104,34 @@ Every number here comes from a script in `bench/`. Nothing is estimated.
 ### M2 — PII detection (L0 + L1), 20 synthetic forms, 268 GT instances
 
 ```
-micro  P=0.982  R=0.799  F1=0.881   (tp=214 fp=4 fn=54)
+micro  P=0.964  R=0.802  F1=0.876   (tp=215 fp=8 fn=53)
 macro  F1=0.784
 fail-closed regions blanked: 4
 ```
 
-A correction to an earlier claim: this was reported as **P=0.980** over "248
-instances". Both numbers were wrong. The corpus had 268 instances (it registers
-a free-text paragraph in every form but only labelled PERSON/EMAIL/PHONE inside
-it, leaving a real postal address unlabelled), and the benchmark had been
-scoring against incomplete ground truth. Chasing that also produced one bad
-rule — a bare-6-digit-PIN address pattern that measured **precision 0.08** — so
-it was deleted rather than kept at a lower score.
+All 4 false positives are `OPAQUE_REGION` — the fail-closed marker for
+cross-origin and uninspectable regions the pipeline **refused** to classify.
+They are scored as false positives on purpose: scoring them as hits would
+inflate precision dishonestly, and scoring them as misses would flatter it.
+Every other class is either perfect or recall-limited, and no class produces a
+false positive of its own.
+
+Two earlier corrections, both from chasing a number that did not survive
+measurement. This was first reported as **P=0.980** over "248 instances": the
+corpus actually has 268 (it registers a free-text paragraph in every form but
+labelled only PERSON/EMAIL/PHONE inside it, leaving a real postal address
+unlabelled). It was then reported as **P=0.982** — which was a stale snapshot,
+not a second measurement. The current figure is scored from the real detector
+(`extension/bench/emit_detections.ts` over all 20 forms) and verified against a
+clean checkout of the committed tree: the detection output is **byte-identical**
+before and after this session's changes, so the difference was bookkeeping, not
+a regression. Chasing the original discrepancy also produced one bad rule — a
+bare-6-digit-PIN address pattern that measured **precision 0.08** — so it was
+deleted rather than kept at a lower score.
+
+The remaining recall gap is concentrated and intentional: PERSON 30/54, ORG 0/2,
+MONEY 0/2, IP_ADDRESS 0/2. Regex structurally cannot find a name in prose. That
+is precisely what L2 exists to close, and PERSON-only admission is what ships.
 
 ### M3 — redaction precision (pixel channel)
 
@@ -135,6 +151,28 @@ The recoverability check is a **PROXY, not OCR** — it runs L1 regex over the
 redacted region, so it catches a readable card number and cannot catch a
 recognisable face. An exact rate needs Tesseract or an OCR VLM in the loop. We
 did not want to publish a number that implied more than we measured.
+
+#### L3 — the loop is now wired, and what is still unmeasured
+
+`ocrRegions()` existed but had **zero callers**, so the documented
+detect → crop → OCR → re-classify loop was dead code. It is now live in
+`entrypoints/offscreen/main.ts`: text regions are detected, cropped, read, and
+the recovered strings go through L1 and L2 exactly as page text does.
+
+Measured in real Chrome on real canvases
+(`bench/make_l3_recovery_harness.py` → `bench/results/l3_recovery.json`):
+
+```
+stage 1 · detection   12/12 covered   9.5 ms/canvas     MEASURED
+stage 2 · recovery    12/12           —                NOT MEASURED
+stage 3 · re-class    8 hits (4 EMAIL, 4 PHONE)        MEASURED
+```
+
+Stage 2 is a **stand-in**. TrOCR (`trocr-small-printed`, 143 MB q8) has never
+been executed in a browser, so the harness feeds ground truth where OCR output
+would go. That proves the plumbing and the stage boundaries — it does not prove
+OCR accuracy, which is the open question. Stage 1 is real, stage 3 runs against
+the stand-in. We are not presenting 12/12 as a recoverability result.
 
 ### L3 — canvas coverage
 
@@ -162,9 +200,37 @@ things that each independently made the detector look worse than it was:
 
 There is still no learned text detector underneath: the region finder is a
 geometric edge-density heuristic, and the OCR stage is `trocr-small-printed`
-(136 MB q8) which we have **not** run in a browser. So this measures detection,
+(143 MB q8) which we have **not** run in a browser. So this measures detection,
 not recovery — a detected region is blanked, but whether a value inside it was
 readable is not established.
+
+#### The L3 detector: yolov10n was the wrong recommendation, twice
+
+`yolov10n` looked ideal — 2.65 MB int8 against DETR's 42.96 MB q8, NMS-free,
+and its `config.json` does contain `"0": "person"`. It **does not run**:
+transformers.js 3.8.1 has no `yolov10` model class, so it falls back to base and
+fails with `Attempting to broadcast an axis by a dimension other than 1. 512 by
+797`. Architecture metadata is not loadability, and I had claimed otherwise
+before checking.
+
+Every candidate was then executed (`extension/bench/probe_detectors.ts`):
+
+| model | size | runs? | warm median |
+|---|---|---|---|
+| `yolov10n` int8 | 2.65 MB | **no** — unsupported architecture | — |
+| `yolos-tiny` q8 | 9.66 MB | yes, but **2938 ms/frame** and 0 persons found | 2938 ms |
+| `rtdetr_r18vd` q8 | 21.71 MB | yes, NMS-free | **632 ms** |
+| `detr-resnet-50` q8 | 42.96 MB | yes | 3954 ms |
+
+**RT-DETR r18 ships**: 6.3× faster than DETR at half the size, and NMS-free.
+`yolos-tiny` was rejected on latency alone — 2.9 s per frame would dominate
+every cycle. Note none of these is a *face* detector; all detect COCO `person`,
+which is what the code filters on.
+
+Licensing is unresolved and deliberately not papered over: yolov10n is
+**AGPL-3.0**, and `rtdetr_r18vd` and `detr-resnet-50` both declare **no licence**
+in their Hugging Face metadata. Neither is obviously shippable in a distributed
+extension until that is decided. `piiranha` was rejected for the same reason.
 
 ### M5 — latency
 
@@ -172,6 +238,7 @@ readable is not established.
 CLIENT   L0+L1 per form     p50 17.94 ms   p95 19.36 ms
          frame-diff gate    p50 27.95 ms
          pseudonym minting  p50  0.02 ms
+         L2 NER             3.6 ms/string, 57% of strings elided (see below)
 SERVER   round trip (no engine)  p50 2.0 ms   p95 4.2 ms   12/12 ok
 T1 TTFT with vLLM             NOT MEASURED
 ```
@@ -180,6 +247,51 @@ The server figure is the **degraded** path — no GPU here, so it returns a
 schema-valid `none` plan. It is a floor, not the T1 turn. ARCHITECTURE.md §8's
 700 ms p50 stays a **design target**: this machine has no GPU and no VLM weights,
 and inventing a number from the fallback would be a fabricated benchmark.
+
+#### L2 was sequential. Batching was the obvious fix and it is the wrong one.
+
+At ~3.6 ms per string, a dense page paid hundreds of milliseconds of model time
+before a pixel was redacted. The natural fix is to batch the strings. That was
+implemented, measured, and **rejected**
+(`extension/bench/probe_l2_batch_perf.ts`):
+
+```
+batch  1:   453 ms   3.78 ms/string    tokens = 638
+batch  2:   384 ms   3.20 ms/string    tokens = 633
+batch  4:   384 ms   3.20 ms/string    tokens = 631
+batch  6:   379 ms   3.16 ms/string    tokens = 630   <- best
+batch  8:   476 ms   3.97 ms/string    tokens = 625
+batch 12:   421 ms   3.51 ms/string    tokens = 620
+best speedup: 1.20x
+```
+
+Two reasons that is a bad trade. The win is 20%, and **the token count changes
+with the batch size** — the same 120 strings produce 638 detections at B=1 and
+620 at B=12. A redaction detector whose output depends on how the work happened
+to be chunked cannot be reasoned about, benchmarked, or reproduced. transformers.js
+appears to run one forward pass per input regardless of the batch argument, so
+batching mostly adds padding work.
+
+What ships instead is **input reduction**, which is deterministic and larger
+(`extension/bench/probe_l2_dedup.ts` → `bench/results/l2_input_reduction.json`):
+
+```
+818 element texts -> 287 unique  (64.9% were repeated labels)
+                      -> 283 after the L1-covered filter
+wall clock 3071 ms -> 1316 ms   (57.2% saved)
+admitted spans lost: 0
+```
+
+Both halves are answer-preserving by construction. Dedupe is free because the
+model is deterministic. The filter skips a string only when L1 already owns its
+PII **and** it holds no plausible person name — and since PERSON is the only
+admitted class, a name is the only thing L2 could add. The 12 spans the filter
+did drop were `US_DRIVER_LICENSE` / `US_ITIN` / `US_PASSPORT` / `CREDIT_CARD`,
+all of which `admitL2` rejects downstream anyway.
+
+The filter is honestly small: 4 of 287 unique strings, because corpus strings
+mostly pair an identifier with a name — the exact case it must not skip. Dedupe
+is doing the work.
 
 ### Leakage — the number we would want judged on
 
@@ -245,16 +357,20 @@ we do not send it. The gate aborts if any such region would ship uncovered.
 | id | model | size | licence | where | measured |
 |---|---|---|---|---|---|
 | L2 PII | `onnx-community/bert-small-pii-detection-ONNX` | 27.4 MB q8 | Apache-2.0 | client, WebGPU | yes |
-| L3 faces | `onnx-community/detr-resnet-50-ONNX` | 43 MB | Apache-2.0 | client, WebGPU/WASM | label space only |
-| L3 OCR | `Xenova/trocr-small-printed` | 136 MB q8 | — | client, WASM | no |
+| L3 faces | `onnx-community/rtdetr_r18vd-ONNX` | 21.7 MB q8 | **none declared** | client, WebGPU/WASM | executed; 632 ms |
+| L3 OCR | `Xenova/trocr-small-printed` | 143 MB q8 | — | client, WASM | not run in a browser |
 
 ### Two negative results we are publishing
 
-**There is no small browser-loadable face detector.** We checked 1000
+**There is no small browser-loadable *face* detector.** We checked 1000
 `onnx-community` repos, 200 `object-detection` + `transformers.js` results, and
 the popular community face YOLOs — which ship **zero** `.onnx` files despite
 high download counts. So L3 uses COCO `person` and pixelates the whole person
-box, which is a superset of a face and therefore the safe direction.
+box, which is a superset of a face and therefore the safe direction. It is worth
+being precise about the correction here: the *absence of a face-specific model*
+is real, but "there is no small browser-loadable person detector" was an
+over-generalisation and was wrong. `rtdetr_r18vd` at 21.7 MB is small, runs, and
+is what ships.
 
 **There is no browser-loadable text detector either.** No DBNet/EAST/CRAFT
 export exists on the Hub. The canvas text pass is a geometric edge-density
@@ -265,7 +381,39 @@ claimed a "3 MB NMS-free face detector" that was in fact a 39 MB COCO detector
 with no face class, and a `runL3Text` that called the *face* detector and
 relabelled every box `DATE`. Neither was caught by a test, because the model
 ids resolved and the pipeline tasks were valid. Checking the Hub is what
-surfaced it. Recorded in `MODEL_FINDINGS` (`models.ts`).
+surfaced it, and executing the candidates is what caught the yolov10n case.
+Recorded in `MODEL_FINDINGS` (`models.ts`).
+
+### Three bugs that were structural, not typos
+
+These are worth listing because each one was invisible to the type checker, the
+test suite, and the build — and each would have been a privacy failure.
+
+1. **Three pseudonymizers.** `lib/pseudonym.ts`, a private class in
+   `offscreen/redact.ts`, and a bench copy in `bench/pseudonym_helper.ts`. The
+   compositor's copy minted `[PERSON_1]` while the canonical one minted
+   `[PERSON_A3_1a2b3c4d]`, and — worse — each constructed its own instance with
+   a **random** salt and counter, so the content script and the compositor could
+   not agree on a token even in principle. Stable per-session pseudonyms, which
+   ARCHITECTURE.md depends on for co-reference, were a property of the code's
+   *intent* and not of its behaviour. Now there is one implementation, the
+   session id is the salt, and the token suffix is derived from
+   `(sessionId, value)` rather than a counter — so it is order-independent and
+   two contexts holding the same session id mint identical tokens. Covered by
+   `tests/pseudonym.test.ts`.
+
+2. **Open CORS.** `docker-compose.yml` set `VEIL_ALLOWED_ORIGINS: "*"`, and the
+   server default was the wildcard `chrome-extension://*`. Any web page the user
+   visited could POST to the server. Both are now explicit, and
+   `bench/test_cors.py` (9 checks) fails if a wildcard is ever reintroduced.
+
+3. **A mark that rerolled into a sensitive field.** Actions re-resolve their
+   mark against the live page, because the snapshot may be stale by the time the
+   plan lands. But the sensitive-field check ran *before* re-resolution, so a
+   mark that moved from a harmless label onto an input would be clicked without
+   confirmation. The policy now runs after re-resolution, in one place
+   (`lib/action-safety.ts`), and a reroll into a sensitive target forces
+   `ask_user`. 9 tests in `tests/action-safety.test.ts`.
 
 ---
 
@@ -288,14 +436,27 @@ surfaced it. Recorded in `MODEL_FINDINGS` (`models.ts`).
 # 1. bench harness — every number in this README
 ./.venv/Scripts/python.exe bench/gen_synthetic.py        # regenerate corpus
 ./.venv/Scripts/python.exe bench/test_contract.py       # wire-format check
-./.venv/Scripts/python.exe bench/test_server.py         # 17 server checks
-cd extension && npx vitest run && npx wxt build         # 162 tests, both targets
+./.venv/Scripts/python.exe bench/test_server.py         # 16 server checks
+./.venv/Scripts/python.exe bench/test_cors.py           # 9 CORS checks
+cd extension && npx vitest run && npx wxt build         # 203 tests, both targets
 
-# 2. server
+# server
 ./.venv/Scripts/python.exe -m uvicorn server.app:app --port 8000
 #    (docker compose up for vLLM + weights)
 
-# 3. extension — load unpacked from extension/.output/chrome-mv3
+# extension — load unpacked from extension/.output/chrome-mv3
+```
+
+### Reproducing the measurements
+
+```bash
+cd extension
+npx vite-node bench/probe_detectors.ts        # which L3 detectors actually run
+npx vite-node bench/probe_l2_batch_perf.ts    # why batching was rejected
+npx vite-node bench/probe_l2_dedup.ts          # the input-reduction win
+npx vite-node bench/measure_l2_batching.ts     # the rejected batching attempt
+npx vite-node bench/measure_leakage.ts         # serialised-text vs pixel-box audit
+cd .. && ./.venv/Scripts/python.exe bench/run_metrics.py
 ```
 
 Benchmarks that need a browser (the L3 canvas measurement) generate a page you
@@ -320,9 +481,18 @@ open directly; `bench/l3_canvas.html` is self-contained.
 - **T1 latency is a design target**, not a measurement. See M5 above.
 - **The recoverability proxy is not OCR** and would not catch a recognisable
   face. M3's 0% leak rate is a regex-over-the-redacted-region check.
-- **L3 detection ≠ L3 recovery.** Canvas regions are found and blanked, but the
-  OCR stage (`trocr-small-printed`, 136 MB) has never been run in a browser, so
-  we cannot claim the recovered string was ever checked.
+- **L3 detection ≠ L3 recovery.** The loop is now wired end to end and stage 1
+  and 3 are measured, but the OCR stage (`trocr-small-printed`, 143 MB) has never
+  been run in a browser, so the recovered string has never been read for real.
+  The 12/12 recovery figure is a stand-in and is labelled as one.
+- **The L3 detector's licence is unresolved.** `rtdetr_r18vd` declares no licence
+  on the Hub. Shipping a model with no grant is a legal question, not a
+  technical one, and it is not answered here.
+- **L2 is deliberately PERSON-only.** Admitting every class measured P=0.090 and
+  ~2444 false positives. Broader coverage is a threshold change in
+  `lib/l2policy.ts`, at a measured precision cost — not a free option.
+- **Batching L2 was measured and rejected**, not overlooked: 1.20x best case with
+  a batch-size-dependent detection count. See M5 above.
 - **Detecting a sealed shadow root is a heuristic.** There is no API for it; we
   infer it from a custom element with no open root, no light children, and a
   real painted box. It will occasionally blank a harmless web component.

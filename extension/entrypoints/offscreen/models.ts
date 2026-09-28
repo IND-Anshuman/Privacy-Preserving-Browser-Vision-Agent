@@ -22,6 +22,7 @@
  */
 import { mapL2Label, type NerSpan } from './ner'
 import type { PiiClass } from '@/lib/schema'
+import { l1CoversIt } from '../../lib/l2policy'
 
 // Re-exported so existing importers keep a single entry point.
 export { mapL2Label }
@@ -37,21 +38,32 @@ export const MODEL_IDS = {
   l2ensemble: 'onnx-community/piiranha-v1-detect-personal-information-ONNX',
 
   /**
-   * L3 detector. MEASURED AND CORRECTED — see MODEL_FINDINGS below.
+   * L3 detector. Every alternative was measured, not assumed.
    *
-   * This was `onnx-community/yolov10n`, described in a comment as "NMS-free
-   * detector, 3 MB int8, 14× smaller than DETR". Every part of that was wrong:
-   *   - the repo is 39 MB of ONNX, not 3 MB;
-   *   - YOLOv10n is a COCO detector whose 80 classes do not include "face",
-   *     so it cannot detect a face at all;
-   *   - it ships no id2label.json, so the label space cannot even be read.
+   * yolov10n was the obvious candidate — 2.65 MB int8, NMS-free — and it does
+   * NOT RUN. transformers.js 3.8.1 has no `yolov10` model class:
+   *   Unknown model class "yolov10", attempting to construct from base class
+   *   Error: Missing the following inputs: images
+   * The repo resolves and the weights download, so this looks like a config
+   * problem rather than an unsupported architecture. It is not fixable from our
+   * side. Reproduce: bench/probe_detectors.ts.
    *
-   * DETR is used instead. It is large (43 MB) but it is the only
-   * transformers.js-compatible detector available with a usable label space,
-   * and `person` is COCO class 1. A "person" box is a superset of a face box,
-   * which is the safe direction for a tool whose job is to over-redact.
+   * The alternatives, measured warm on the same synthetic frame (Node, CPU):
+   *
+   *   model                          q8 MB    warm ms    verdict
+   *   yolov10n                       2.65     —          UNSUPPORTED ARCHITECTURE
+   *   yolos-tiny                     9.66     5216       runs, no person on a silhouette
+   *   detr-resnet-50-ONNX (old)     42.96     3954       runs
+   *   rtdetr_r18vd                   21.71      632       runs  ← 6× faster, half the size
+   *
+   * RT-DETR r18 is the answer, and not only for size: RT-DETR is NMS-free, so
+   * the slow hand-rolled postprocess that made DETR expensive disappears too.
+   *
+   * `person` is COCO class 0 in RT-DETR's id2label. There is still no small
+   * browser-loadable FACE detector, so this pixelates a whole person box — a
+   * superset of a face, which is the safe direction for a redaction tool.
    */
-  l3face: 'onnx-community/detr-resnet-50-ONNX',
+  l3face: 'onnx-community/rtdetr_r18vd',
 
   /**
    * L3 OCR. 136 MB of q8 weights across encoder + decoder (NOT 39 MB — that
@@ -80,27 +92,65 @@ export const MODEL_IDS = {
  */
 export const MODEL_FINDINGS = {
   /**
-   * NEGATIVE RESULT, and the reason L3 faces work the way they do.
+   * NEGATIVE RESULT 1 — no small browser-loadable FACE detector.
    *
-   * There is no small, browser-loadable FACE DETECTOR. Checked:
-   *   - onnx-community/* (1000 repos): no face detector. The `face` hits are
-   *     arcface (recognition embeddings), vit-face-expression and fairface
-   *     (classification). None produce bounding boxes.
-   *   - Hub search, object-detection + transformers.js, 200 results: the only
-   *     person-capable models are facebook/detr-resnet-50 and its siblings.
-   *   - Popular community face YOLOs (iitolstykh/YOLO-Face-Person-Detector,
-   *     Reshma67/yolov8-face-detection, alonsorobots/scrfd_320_batched) all
-   *     ship ZERO .onnx files. High download counts, no browser weights.
-   *   - onnx-community/textnet-tiny is 10.4 MB and looks ideal, but its
-   *     architecture is `TextNetBackbone` — a backbone with no detection head
-   *     and no id2label. It cannot emit boxes.
+   * Checked: 1000 `onnx-community` repos (the `face` hits are arcface
+   * embeddings, vit-face-expression and fairface classification — none emit
+   * boxes); 200 `object-detection` + `transformers.js` repos; and the popular
+   * community face YOLOs (iitolstykh/YOLO-Face-Person-Detector,
+   * Reshma67/yolov8-face-detection, alonsorobots/scrfd_320_batched), which ship
+   * ZERO .onnx files despite high download counts. onnx-community/textnet-tiny
+   * is 10.4 MB and looks ideal, but its architecture is `TextNetBackbone` — a
+   * backbone with no detection head, so it cannot emit boxes.
    *
-   * So: DETR + the COCO `person` class, and pixelate the whole person box.
-   * Over-redacting a body to protect a face is the correct trade for this tool.
+   * So the pixel channel pixelates a whole COCO `person` box.
    */
-  faceDetector: 'no-small-option',
-  /** yolov10n is real but is a 39 MB COCO detector with no face class. */
-  rejected: ['onnx-community/yolov10n', 'onnx-community/textnet-tiny'],
+
+  /**
+   * NEGATIVE RESULT 2 — the recommended 2.65 MB detector does not run.
+   *
+   * `onnx-community/yolov10n` is 2.65 MB int8, NMS-free, and its config.json
+   * carries a full COCO `id2label` including `person`. It still cannot be used:
+   * transformers.js 3.8.1 has no `yolov10` model class, so loading falls back
+   * to the base class and inference fails with
+   * `Missing the following inputs: images`.
+   *
+   * Worth recording precisely because it is the SECOND time a recommendation in
+   * this project has been true of the repository and false of the runtime. The
+   * repo resolves, the weights download, the size is real — and the model still
+   * cannot execute. Only running it finds that out.
+   */
+  yolov10: 'unsupported-by-transformers-js',
+
+  /**
+   * The measured comparison that settled it, warm, on one synthetic frame:
+   *
+   *   yolov10n                  2.65 MB     —        does not run
+   *   yolos-tiny                9.66 MB   5216 ms    runs, detected no person
+   *   detr-resnet-50-ONNX      42.96 MB   3954 ms    the previous choice
+   *   rtdetr_r18vd              21.71 MB    632 ms    ← shipped
+   *
+   * Reproduce: npx vite-node bench/probe_detectors.ts
+   */
+  detectorTable: [
+    { repo: 'onnx-community/yolov10n', q8Mb: 2.65, warmMs: null, runs: false },
+    { repo: 'Xenova/yolos-tiny', q8Mb: 9.66, warmMs: 5216, runs: true },
+    { repo: 'onnx-community/detr-resnet-50-ONNX', q8Mb: 42.96, warmMs: 3954, runs: true },
+    { repo: 'onnx-community/rtdetr_r18vd', q8Mb: 21.71, warmMs: 632, runs: true },
+  ],
+
+  /** Rejected, with the reason each was rejected. */
+  rejected: ['onnx-community/yolov10n', 'onnx-community/textnet-tiny', 'Xenova/owlvit-tiny'],
+
+  /**
+   * NEGATIVE RESULT 3 — no browser-loadable TEXT detector either.
+   * No DBNet/EAST/CRAFT export exists on the Hub, so `runL3Text` is a geometric
+   * edge-density region finder. A heuristic, and labelled as one.
+   */
+
+  /** Licence is unstated on the Hub for every detector candidate, so the
+   *  shipped one is marked UNVERIFIED rather than assumed permissive. */
+  detectorLicence: 'UNVERIFIED',
 } as const
 
 /** COCO class 1. The only person-capable class in a browser-loadable detector. */
@@ -130,7 +180,7 @@ export interface ModelCard {
 export const MODEL_CARDS: ModelCard[] = [
   { id: 'l2', repo: MODEL_IDS.l2, task: 'ner', approxBytes: 27.4 * 1024 * 1024, license: 'Apache-2.0', device: 'webgpu', measured: true, note: '24 PII classes; the load-bearing neural layer' },
   { id: 'l2ensemble', repo: MODEL_IDS.l2ensemble, task: 'ner', approxBytes: 30 * 1024 * 1024, license: 'UNVERIFIED', device: 'webgpu', measured: false, note: 'second voter; Hub returned no licence' },
-  { id: 'l3face', repo: MODEL_IDS.l3face, task: 'detection', approxBytes: 3 * 1024 * 1024, license: 'Apache-2.0', device: 'wasm', measured: false, note: 'NMS-free by design' },
+  { id: 'l3face', repo: MODEL_IDS.l3face, task: 'detection', approxBytes: 21.7 * 1024 * 1024, license: 'UNVERIFIED', device: 'wasm', measured: true, note: 'RT-DETR r18, NMS-free, 632 ms warm; Hub returned no licence' },
   { id: 'l3ocr', repo: MODEL_IDS.l3ocr, task: 'ocr', approxBytes: 787 * 1024 * 1024, license: 'Apache-2.0', device: 'wasm', measured: false, note: '39 MB q8 decoder; only run on DETECTED regions' },
   { id: 'audit', repo: MODEL_IDS.audit, task: 'vlm', approxBytes: 260 * 1024 * 1024, license: 'Apache-2.0', device: 'webgpu', measured: false, note: 'optional, off on small GPUs' },
 ]
@@ -248,6 +298,10 @@ export async function runL2(texts: string[]): Promise<{
   available: boolean
   which: ModelId | null
   error?: string
+  /** Strings actually sent to the model, after dedupe and the L1-covered filter. */
+  analysed?: number
+  /** What the reduction saved, split by cause. See lib/l2policy.ts:l1CoversIt. */
+  skipped?: { dedup: number; l1Covered: number }
 }> {
   const t0 = performance.now()
   const session = await getSession('l2')
@@ -255,31 +309,112 @@ export async function runL2(texts: string[]): Promise<{
     return { spans: [], ms: performance.now() - t0, available: false, which: null, error: getLoadErrors().l2 ?? 'unavailable' }
   }
   try {
-    const runner = session as (input: string) => Promise<unknown>
+    const runner = session as (input: string | string[]) => Promise<unknown>
     const spans: NerSpan[] = []
-    for (const text of texts) {
-      /**
-       * The model has 512 token positions. A 400-character string is ~150
-       * wordpiece tokens on its own, and a long paragraph can exceed 512 on its
-       * own — at which point ORT throws a broadcast error, `runL2` returns
-       * `available: false`, and the caller treats a long paragraph as "no
-       * detections" rather than "this text was never analysed".
-       *
-       * Truncating is a real limitation, so it is bounded and documented: a
-       * PII value longer than this many characters would be missed. For the
-       * classes that matter (names, emails, phone numbers, card and Aadhaar
-       * numbers) 200 characters is several times the longest realistic value.
-       */
-      const bounded = text.slice(0, L2_MAX_CHARS)
-      if (bounded !== text) {
+
+    /**
+     * INPUT REDUCTION, not batching. [M5]
+     *
+     * This was a per-string loop over every element text, so a 200-element page
+     * paid 200 forward passes at a measured ~3.6 ms each — roughly 700 ms of
+     * client compute before a single pixel was redacted, the dominant term in a
+     * cycle and the reason §8's "under 250 ms per cycle" was unreachable.
+     *
+     * The obvious fix is batching. It was implemented, measured, and rejected;
+     * see the block below for the numbers and why a 1.20x win was not worth a
+     * batch-size-dependent output. What shipped instead sends FEWER strings.
+     *
+     * The subtlety batching would have introduced, recorded here because it is
+     * a trap worth knowing about: a batch returns one token list per input, and
+     * each list's character offsets are relative to ITS OWN string. A span from
+     * row 7 attributed to row 2's text yields a plausible-looking span at the
+     * wrong offset — which surfaces as a recall number, not as an error.
+     */
+    const bounded = texts.map((t) => {
+      const s = t.slice(0, L2_MAX_CHARS)
+      if (s !== t) {
         console.info('[veil] l2: truncated an over-long string to fit the 512-token window')
       }
-      const raw = await runner(bounded)
+      return s
+    })
+
+    /**
+     * Batching is bounded TWICE, and both bounds are needed.
+     *
+     * `nerBatchSize()` is a memory bound: a 512-token × 768-hidden activation is
+     * ~12 MB at B=8 and ~96 MB at B=64, so a fixed large batch OOMs on the
+     * low-memory devices this feature exists to support.
+     *
+     * But there is also a SHAPE bound, and it is the one that bit us. A batch is
+     * padded to its longest member: 8 strings of 200 characters is roughly
+     * 8 × 75 wordpiece tokens ≈ 600 positions, which overruns the model's 512
+     * and makes ORT throw `Attempting to broadcast an axis by a dimension other
+     * than 1. 512 by 797`. Every batch in the run then failed identically.
+     *
+     * So the batch size is additionally capped by how many 200-character strings
+     * fit in 512 tokens. Being explicit about it is the difference between a
+     * working batch and one that silently returns nothing.
+     *
+     * Kept because the failure mode is worth remembering, even though batching
+     * was subsequently rejected on determinism grounds (below).
+     */
+    /**
+     * DETERMINISTIC, DEDUPLICATED, and filtered — not batched. [M5]
+     *
+     * Batching was implemented, measured, and REJECTED. The numbers
+     * (bench/results/l2_batching.json, probe_l2_batch_perf.ts):
+     *
+     *   best speedup 1.20x (batch 6 vs batch 1, 120 strings: 453 ms -> 379 ms)
+     *   token count VARIES with batch size: 638 / 633 / 631 / 630 / 625 / 620
+     *
+     * That second line is disqualifying. A detector whose output depends on how
+     * the work happened to be chunked cannot be reasoned about, cannot be
+     * benchmarked, and cannot be trusted to reproduce. transformers.js appears
+     * to run one forward pass per input regardless of the batch argument, so
+     * batching mostly adds padding work. Shipping it would be shipping a
+     * nondeterminism in exchange for 20% — a bad trade for a redaction path.
+     *
+     * What does work, and is bigger: send fewer strings. Two filters, both
+     * answer-preserving by construction, measured at 60.3% wall clock on the
+     * corpus (bench/results/l2_input_reduction.json):
+     *
+     *   DEDUPE — a real form repeats "Email:", "Name:", "Phone:" dozens of
+     *   times. 818 element texts are only 287 unique (64.9% repeats). The model
+     *   is deterministic, so identical input gives identical output.
+     *
+     *   SKIP L1-COVERED STRINGS — if every PII-shaped token in a string is
+     *   already matched by a regex AND the string contains no plausible person
+     *   name, L2 cannot add a finding, because PERSON is the only admitted
+     *   class (lib/l2policy.ts).
+     *
+     * Verified against the shipping `l1CoversIt` on the corpus: 57.2% wall
+     * clock saved, 0 admitted spans lost. The 12 spans the filter did drop were
+     * US_DRIVER_LICENSE / US_ITIN / US_PASSPORT / CREDIT_CARD — all rejected by
+     * `admitL2` downstream anyway. (Dedupe is doing most of the work: 818 texts
+     * are 287 unique. The L1 filter only removes 4 of those 287, because the
+     * corpus's strings mostly pair an identifier with a name — which is
+     * precisely the case the filter is designed NOT to skip.)
+     */
+    const unique = [...new Set(bounded)]
+    const candidates = unique.filter((t) => !l1CoversIt(t))
+    const skipped = bounded.length - candidates.length
+
+    for (const t of candidates) {
+      const raw = await runner(t)
       for (const row of normaliseRows(raw)) {
-        spans.push(...mergeTokens(recoverOffsets(row, bounded), bounded))
+        spans.push(...mergeTokens(recoverOffsets(row, t), t))
       }
     }
-    return { spans, ms: performance.now() - t0, available: true, which: 'l2' }
+    return {
+      spans,
+      ms: performance.now() - t0,
+      available: true,
+      which: 'l2',
+      // Surfaced so the HUD can show what the reduction actually bought, rather
+      // than the model quietly doing less work with no visible reason.
+      analysed: candidates.length,
+      skipped: { dedup: bounded.length - unique.length, l1Covered: unique.length - candidates.length },
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     loadErrors.set('l2', msg)

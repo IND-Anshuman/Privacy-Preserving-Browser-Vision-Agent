@@ -47,6 +47,17 @@ export const PII_CLASSES = [
    * region solid, and the ledger reports it as "not inspected" rather than
    * pretending the content was classified.
    */
+  /**
+   * A text region recovered from pixels by L3: the OCR pass read a string out
+   * of a `<canvas>`, a `<video>` frame or an image.
+   *
+   * Not a PII class. It says "there is readable text here" and nothing more —
+   * the string is classified by L1/L2 afterwards, and those hits carry the real
+   * class. Emitting it is still worth it: a captcha or a hand-written number
+   * matches no detector, and an unclassified region is a region we cannot tell
+   * the server about.
+   */
+  'TEXT_REGION',
   'OPAQUE_REGION',
 ] as const
 export type PiiClass = (typeof PII_CLASSES)[number]
@@ -113,7 +124,16 @@ export type Detection = z.infer<typeof DetectionSchema>
  * ------------------------------------------------------------------ */
 
 export const PlaceholderSchema = z.object({
-  token: z.string().regex(/^\[[A-Z_]+_\d+\]$/, 'placeholder must look like [PERSON_1]'),
+  // Accepts [PERSON_1] and the current [PERSON_A3_1a2b3c4d]. The suffix is
+  // derived from the value, not a counter, precisely so two independent
+  // contexts (content script and compositor) mint the same token for the same
+  // value — a counter would have made the numbering depend on walk order.
+  token: z
+    .string()
+    .regex(
+      /^\[(?:PASSWORD|[A-Z_]+(?:_[A-Z0-9]{1,2})?_[0-9a-f]{1,8})\]$/,
+      'placeholder must look like [PERSON_1] or [PERSON_A3_1a2b3c4d]',
+    ),
   cls: z.enum(PII_CLASSES),
 })
 export type Placeholder = z.infer<typeof PlaceholderSchema>

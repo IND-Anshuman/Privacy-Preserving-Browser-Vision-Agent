@@ -16,6 +16,7 @@ import {
 } from '@/lib/schema'
 import { classifySemantics, hitsFromElement, runL1, REDACTED_PASSWORD, type RawHit } from '@/lib/pii'
 import { assignMarks, resolveMark, type MarkAssignment, type MarkCandidate } from '@/lib/som'
+import { decideSafety } from '@/lib/action-safety'
 import { Pseudonymizer } from '@/lib/pseudonym'
 import { fnv1a } from '@/lib/framediff'
 
@@ -508,7 +509,6 @@ function hideOverlay(): void {
  *  Executor (§4) — mark re-resolution + destructive confirmation
  * ------------------------------------------------------------------ */
 
-const DESTRUCTIVE = new Set(['submit', 'send', 'pay', 'delete'])
 
 interface PlanAction {
   action: string
@@ -553,12 +553,14 @@ async function executeAction(runId: string, index: number, act: PlanAction): Pro
 
   // Re-resolve the mark against the LIVE page, not the stale snapshot.
   let el: HTMLElement | null = null
+  let rerolled = false
   if (act.target?.mark !== undefined) {
     const res = resolveMark(act.target.mark, currentMarks, liveCandidates())
     if (res.status === 'lost' || !res.nodeId) {
       // Never a blind click. Ask instead (§12 risk table).
       return confirmToast('That control is no longer on the page. Continue?', runId, index)
     }
+    rerolled = res.status === 'reassigned'
     el = byHandle(res.nodeId)
     if (!el) return confirmToast('That control could not be found. Continue?', runId, index)
   } else if (act.target?.selector) {
@@ -567,9 +569,20 @@ async function executeAction(runId: string, index: number, act: PlanAction): Pro
 
   const verb = (el?.tagName.toLowerCase() === 'button' ? el.textContent?.trim() ?? '' : '') + ' ' + accessibleName(el ?? document.body)
 
-  // Destructive verbs require an explicit human click. Always. (§4)
-  if (DESTRUCTIVE.has(act.action) || /\b(submit|send|pay|delete|confirm order|place order)\b/i.test(verb)) {
-    return confirmToast(`About to ${act.action || verb.slice(0, 30)} — confirm?`, runId, index)
+  /**
+   * One policy, one place. The destructive-verb check, the fill guard and the
+   * reroll guard all used to live inline here, which is how `click` and `focus`
+   * ended up unguarded: the sensitive-target check was inside the `fill` case.
+   * `decideSafety` evaluates every axis for every action.
+   */
+  const safety = decideSafety({
+    action: act.action,
+    verb,
+    rerolled,
+    targetSensitive: el ? isSensitiveTarget(el) : false,
+  })
+  if (safety.confirm) {
+    return confirmToast(safety.reason ?? 'Continue?', runId, index)
   }
 
   switch (act.action) {
@@ -584,10 +597,9 @@ async function executeAction(runId: string, index: number, act: PlanAction): Pro
       break
     case 'fill': {
       if (!el) break
+      // The sensitive-target guard for `fill` now lives in decideSafety, so it
+      // runs for every action instead of only this one.
       const value = act.value ?? ''
-      if (isSensitiveTarget(el)) {
-        return confirmToast('That field holds something sensitive. Fill it in yourself?', runId, index)
-      }
       setNativeValue(el, value)
       el.dispatchEvent(new Event('input', { bubbles: true }))
       el.dispatchEvent(new Event('change', { bubbles: true }))

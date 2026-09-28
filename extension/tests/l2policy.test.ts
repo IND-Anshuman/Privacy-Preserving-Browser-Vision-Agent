@@ -5,6 +5,7 @@ import {
   l2Enabled,
   l2Status,
   enabledL2Classes,
+  l1CoversIt,
 } from '../lib/l2policy'
 import {
   recoverOffsets, normaliseRows, mergeTokens, MODEL_IDS, MODEL_FINDINGS,
@@ -51,19 +52,29 @@ describe('model ids are the corrected ones', () => {
     expect(MODEL_IDS.l2).not.toContain('bert-base-NER')
   })
 
-  it('uses a face detector that can actually detect a person', () => {
-    // This test used to assert `yolov10n` on the grounds that it was a "small
-    // NMS-free face detector, 3 MB". All three claims were false: the repo is
-    // 39 MB, it is a COCO detector whose 80 classes contain no "face", and it
-    // ships no id2label. It resolved, the task was valid, and the code ran —
-    // which is exactly why a passing suite did not catch it.
-    //
-    // The assertion is now on the property that matters: the chosen detector's
-    // label space must include a person class. DETR's COCO label 1 is `person`.
-    expect(MODEL_IDS.l3face).toBe('onnx-community/detr-resnet-50-ONNX')
-    expect(MODEL_FINDINGS.faceDetector).toBe('no-small-option')
-    // And the rejected candidates stay rejected, so a future "optimisation"
-    // cannot quietly reintroduce a model with no usable label space.
+  it('ships the detector that was measured to run fastest', () => {
+    // This assertion is deliberately on the MEASUREMENT rather than on a
+    // literal model id, so it survives the next re-evaluation. The table in
+    // MODEL_FINDINGS.detectorTable is the evidence; the test just refuses to
+    // regress below the runner-up.
+    const table = MODEL_FINDINGS.detectorTable
+    const shipped = table.find((r) => r.repo === MODEL_IDS.l3face)
+    expect(shipped, `${MODEL_IDS.l3face} is not in the measured table`).toBeTruthy()
+    expect(shipped!.runs, 'the shipped detector does not run').toBe(true)
+
+    const runners = table.filter((r) => r.runs && typeof r.warmMs === 'number')
+    const best = runners.reduce((a, b) => (b.warmMs! < a.warmMs! ? b : a))
+    expect(MODEL_IDS.l3face).toBe(best.repo)
+    // And it must be materially smaller than the one it replaced.
+    const old = table.find((r) => r.repo.includes('detr-resnet-50'))
+    expect(shipped!.q8Mb).toBeLessThan(old!.q8Mb)
+  })
+
+  it('records that the 2.65 MB recommendation does not run', () => {
+    // yolov10n resolves, downloads, and has a full COCO id2label — and still
+    // cannot execute in transformers.js. Pinning that keeps a future "just use
+    // the small one" from repeating the experiment.
+    expect(MODEL_FINDINGS.yolov10).toBe('unsupported-by-transformers-js')
     for (const bad of MODEL_FINDINGS.rejected) {
       expect(MODEL_IDS.l3face).not.toContain(bad.split('/')[1]!)
     }
@@ -150,5 +161,59 @@ describe('taxonomy mapping covers the model', () => {
       if (l === 'URL' || l === 'TITLE') expect(mapL2Label(l), l).toBeNull()
       else expect(mapL2Label(l), l).not.toBeNull()
     }
+  })
+})
+
+/* ==================================================================== *
+ *  l1CoversIt — the input-reduction filter
+ *
+ *  This is the M5 lever that actually worked: 60.3% less wall clock, zero
+ *  admitted spans lost (bench/results/l2_input_reduction.json). It replaced
+ *  batching, which was measured at 1.20x with a batch-size-dependent token
+ *  count and rejected.
+ *
+ *  The contract is narrow and these tests hold it to that: skip a string ONLY
+ *  when L1 already owns its PII AND it holds nothing that looks like a name.
+ *  PERSON is the only admitted class, so a name is the only thing L2 could
+ *  possibly add.
+ * ==================================================================== */
+describe('l1CoversIt — input reduction', () => {
+  it('skips a string whose only PII is an L1-owned format', () => {
+    expect(l1CoversIt('divya.banerjee@mailbox.net')).toBe(true)
+    expect(l1CoversIt('6117651412')).toBe(true)
+    expect(l1CoversIt('ABCDE1234F')).toBe(true)
+    expect(l1CoversIt('4111 1111 1111 1111')).toBe(true)
+    expect(l1CoversIt('2345 6789 0123')).toBe(true)
+  })
+
+  it('refuses to skip a string that also contains a name', () => {
+    // This is the whole point. A name is the only class L2 is admitted for, so
+    // a string with L1-owned PII *and* a name must still go to the model.
+    expect(l1CoversIt('Divya Banerjee — divya.banerjee@mailbox.net')).toBe(false)
+    expect(l1CoversIt('Contact Rahul Bose at 6117651412')).toBe(false)
+  })
+
+  it('refuses to skip a string with no L1-owned format at all', () => {
+    // Nothing L1 matches means nothing is already covered, so there is no
+    // justification for skipping — even without a name. A bare value here
+    // could be a name the model would catch.
+    expect(l1CoversIt('some ordinary sentence with no identifiers')).toBe(false)
+    expect(l1CoversIt('')).toBe(false)
+  })
+
+  it('does not treat a lowercase sentence as a name', () => {
+    // The name test is case-sensitive on purpose: "email address" must not
+    // read as a person, or every label on a form would defeat the filter.
+    expect(l1CoversIt('email address — 6117651412')).toBe(true)
+  })
+
+  it('leaves every string the corpus relies on unskipped when a name is present', () => {
+    // Guards the direction that matters: over-skipping loses recall silently.
+    const risky = [
+      'Applicant: Divya Banerjee',
+      'PAN ABCDE1234F holder Rahul Bose',
+      'Contact person Anna Salai, phone 9876543210',
+    ]
+    for (const s of risky) expect(l1CoversIt(s)).toBe(false)
   })
 })

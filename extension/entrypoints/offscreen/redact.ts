@@ -11,6 +11,7 @@ import type { Box, GateVerdict, PiiClass, RedactionEntry, RedactionManifest } fr
 import { SCHEMA_VERSION } from '@/lib/schema'
 import { badgeRect, type MarkAssignment } from '@/lib/som'
 import { THUMB, type TileRect } from '@/lib/framediff'
+import { Pseudonymizer, PASSWORD_TOKEN } from '@/lib/pseudonym'
 
 /* ------------------------------------------------------------------ *
  *  Per-class styling. These are user-facing colours: the panel shows
@@ -47,6 +48,8 @@ const CLASS_TINT: Record<PiiClass, string> = {
    * ordinary redaction.
    */
   OPAQUE_REGION: '#020617',
+  /** Unclassified text recovered from pixels. Reads as neutral grey. */
+  TEXT_REGION: '#475569',
 }
 
 /** Which method each class gets, per §6.1. */
@@ -55,6 +58,10 @@ export function methodFor(cls: PiiClass, hasBox: boolean): 'solid_fill' | 'pixel
   // §6.3 fail-closed: we could not inspect this region, so we erase it rather
   // than guess. Never pixelate — a pixelated frame is still a readable frame.
   if (cls === 'OPAQUE_REGION') return 'solid_fill'
+  // Text we OCR'd but could not classify is in the same position: we know there
+  // is something there and we do not know what it is. A captcha or a
+  // hand-written number matches no detector, so "no match" is not "safe".
+  if (cls === 'TEXT_REGION') return 'solid_fill'
   if (cls === 'PASSWORD' || cls === 'CREDIT_CARD' || cls === 'AADHAAR' || cls === 'PAN' ||
       cls === 'GSTIN' || cls === 'IFSC' || cls === 'IBAN' || cls === 'PASSPORT' ||
       cls === 'DL' || cls === 'BANK_ACCOUNT' || cls === 'API_KEY' || cls === 'JWT') {
@@ -66,73 +73,36 @@ export function methodFor(cls: PiiClass, hasBox: boolean): 'solid_fill' | 'pixel
 }
 
 /* ------------------------------------------------------------------ *
- *  Pseudonymization — stable per session, salt never leaves the client
+ *  Pseudonymization — the CANONICAL implementation lives in lib/pseudonym.ts
  * ------------------------------------------------------------------ */
-
-export class Pseudonymizer {
-  private map = new Map<string, { token: string; cls: PiiClass }>()
-  private counters = new Map<string, number>()
-  private salt: string
-
-  constructor(sessionId: string) {
-    // Salt is derived from the session id and random bytes, held only here.
-    this.salt = `${sessionId}:${Math.random().toString(36).slice(2)}`
-  }
-
-  private hash(s: string): string {
-    // FNV-1a over salt+value. Not a security primitive and not meant to be —
-    // the salt is what stops cross-session linkability, and the raw value is
-    // never transmitted in any form.
-    let h = 0x811c9dc5
-    const input = this.salt + s.toLowerCase().replace(/\s+/g, ' ').trim()
-    for (let i = 0; i < input.length; i++) {
-      h ^= input.charCodeAt(i)
-      h = Math.imul(h, 0x01000193) >>> 0
-    }
-    return h.toString(16).padStart(8, '0')
-  }
-
-  /** Same value + same session → same token. Different session → different. */
-  tokenFor(value: string, cls: PiiClass): { token: string; cls: PiiClass } {
-    const key = `${cls}:${this.hash(value)}`
-    const found = this.map.get(key)
-    if (found) return found
-    // Passwords never get a pseudonym. [§5 hard case]
-    if (cls === 'PASSWORD') {
-      const t = { token: '[PASSWORD]', cls }
-      this.map.set(key, t)
-      return t
-    }
-    const n = (this.counters.get(cls) ?? 0) + 1
-    this.counters.set(cls, n)
-    const t = { token: `[${cls}_${n}]`, cls }
-    this.map.set(key, t)
-    return t
-  }
-
-  /** Every token issued, for the privacy ledger. */
-  issued(): string[] {
-    return [...this.map.values()].map((v) => v.token)
-  }
-}
 
 /* ------------------------------------------------------------------ *
  *  The compositor
  * ------------------------------------------------------------------ */
+
+/** One thing to redact, from any detection layer. */
+export interface RedactItem {
+  id: string
+  cls: PiiClass
+  box: Box
+  score: number
+  source: 'L0' | 'L1' | 'L2' | 'L3'
+  text?: string
+  /**
+   * True when `text` was recovered from pixels by the L3 OCR pass rather than
+   * read off the DOM. It reaches the manifest as `pixelDerived`, which is how
+   * the server can tell "we read this from the page" from "we read this out of
+   * a picture" — a materially weaker claim, since OCR is fallible.
+   */
+  recoveredFromPixels?: boolean
+}
 
 export interface RedactInput {
   /** The ONLY reference to raw pixels. Nulled before return. */
   frame: ImageBitmap | VideoFrame | OffscreenCanvas
   width: number
   height: number
-  items: Array<{
-    id: string
-    cls: PiiClass
-    box: Box
-    score: number
-    source: 'L0' | 'L1' | 'L2' | 'L3'
-    text?: string
-  }>
+  items: RedactItem[]
   marks: MarkAssignment[]
   frameHash: string
   /**
@@ -204,9 +174,10 @@ export async function redactFrame(input: RedactInput): Promise<RedactOutput> {
     if (method === 'pixelate') pixelate(ctx, box)
     else solidFill(ctx, box, CLASS_TINT[it.cls] ?? '#1e293b')
 
+    // A PASSWORD never gets a pseudonym, so it does not go through tokenFor.
     const placeholder =
       it.cls === 'PASSWORD'
-        ? { token: '[PASSWORD]', cls: it.cls as PiiClass }
+        ? { token: PASSWORD_TOKEN, cls: it.cls as PiiClass }
         : p.tokenFor(it.text ?? `${it.cls}:${box.x}:${box.y}`, it.cls)
 
     entries.push({
@@ -217,7 +188,7 @@ export async function redactFrame(input: RedactInput): Promise<RedactOutput> {
       method,
       score: it.score,
       source: it.source,
-      pixelDerived: it.source === 'L3',
+      pixelDerived: it.source === 'L3' || it.recoveredFromPixels === true,
     })
   }
 

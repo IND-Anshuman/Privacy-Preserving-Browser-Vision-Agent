@@ -188,7 +188,7 @@ describe('§1.1 no raw PII may appear in screen_state', () => {
     const { labels } = snapshotWithRedaction(html, 'sess-2')
     const joined = labels.join(' ')
     expect(joined).not.toContain('divya.banerjee@mailbox.net')
-    expect(joined).toMatch(/\[EMAIL_[A-Z0-9]+_\d+\]/)
+    expect(joined).toMatch(/\[EMAIL_[A-Z0-9]+_[0-9a-f]+\]/)
   })
 
   it('leaves a name in prose for the neural layer, which is the honest gap', () => {
@@ -228,7 +228,7 @@ describe('Pseudonymizer', () => {
     const out = p.substitute('Applicant: Divya Banerjee filed it', [
       { start: 11, end: 25, cls: 'PERSON', text: 'Divya Banerjee' },
     ])
-    expect(out).toMatch(/^Applicant: \[PERSON_[A-Z0-9]+_\d+\] filed it$/)
+    expect(out).toMatch(/^Applicant: \[PERSON_[A-Z0-9]+_[0-9a-f]+\] filed it$/)
   })
 
   it('handles several spans in one string', () => {
@@ -239,8 +239,8 @@ describe('Pseudonymizer', () => {
     ])
     expect(out).not.toContain('Divya')
     expect(out).not.toContain('ankit@c.com')
-    expect(out).toMatch(/\[PERSON_[A-Z0-9]*_?\d+\]/)
-    expect(out).toMatch(/\[EMAIL_[A-Z0-9]*_?\d+\]/)
+    expect(out).toMatch(/\[PERSON_[A-Z0-9]+_[0-9a-f]+\]/)
+    expect(out).toMatch(/\[EMAIL_[A-Z0-9]+_[0-9a-f]+\]/)
   })
 
   it('gives the same value the same token across two elements', () => {

@@ -15,6 +15,24 @@
  */
 import type { PiiClass } from './schema'
 
+/**
+ * FNV-1a. Used for the session tag and the memo key.
+ *
+ * Deterministic on purpose: the content script and the offscreen compositor are
+ * separate contexts, so anything randomised per-instance produced different
+ * tokens for the same value in each. This is not a security primitive — the
+ * session id is the only secret and it never leaves the client.
+ */
+export function fnv1a(s: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h >>> 0
+}
+
+
 export interface PseudoEntry {
   token: string
   cls: PiiClass
@@ -24,32 +42,42 @@ export const PASSWORD_TOKEN = '[PASSWORD]'
 
 export class Pseudonymizer {
   private map = new Map<string, PseudoEntry>()
-  private counters = new Map<string, number>()
   private readonly salt: string
   /**
-   * Session-scoped random prefix for the counter. Without it, `[PERSON_1]` in
-   * one session and `[PERSON_1]` in the next would be the SAME token, so a
-   * server holding two transcripts could link the same person across sessions.
-   * The salt randomises the numbering so tokens are not comparable.
+   * Session-scoped prefix for the counter, and the reason co-reference works at
+   * all.
+   *
+   * This was previously `randomSalt().slice(0, 2)` — random PER INSTANCE. The
+   * content script and the offscreen compositor are separate JS contexts, each
+   * constructing its own Pseudonymizer, so the same person got
+   * `[PERSON_A3_1]` in screen_state.json and `[PERSON_F7_1]` in the manifest. The
+   * architecture's co-reference guarantee — "same entity → same token" — did
+   * not hold across the two channels that are supposed to agree, and the
+   * server could not tell that `[PERSON_A3_1]` and `[PERSON_F7_1]` were one
+   * person.
+   *
+   * So the tag is DERIVED from the session id, not randomised. Every context
+   * given the same session id now produces byte-identical tokens, and
+   * cross-session unlinkability is preserved because the session id itself
+   * differs per session. The salt is derived the same way for the same reason:
+   * a per-instance random salt hashed the same value differently in each
+   * context, so the same breakage applied to the memo key.
    */
   private readonly tag: string
 
   constructor(sessionId: string) {
-    this.salt = `${sessionId}:${randomSalt()}`
-    this.tag = randomSalt().slice(0, 2).toUpperCase()
+    this.salt = sessionId
+    this.tag = fnv1a(sessionId).toString(16).slice(0, 2).toUpperCase()
   }
 
   private hash(s: string): string {
-    // FNV-1a over salt+value. NOT a security primitive and not meant to be —
-    // the salt is what prevents cross-session linkability, and the raw value
-    // is never transmitted in any form.
-    let h = 0x811c9dc5
-    const input = this.salt + s.toLowerCase().replace(/\s+/g, ' ').trim()
-    for (let i = 0; i < input.length; i++) {
-      h ^= input.charCodeAt(i)
-      h = Math.imul(h, 0x01000193) >>> 0
-    }
-    return h.toString(16).padStart(8, '0')
+    // Deterministic over (sessionId, value). The salt is the session id, so two
+    // contexts handed the same session id produce the same key — which is what
+    // lets screen_state.json and the manifest agree on a token. NOT a security
+    // primitive: the session id never leaves the client, and the raw value is
+    // never transmitted in any form.
+    const normalised = s.toLowerCase().replace(/\s+/g, ' ').trim()
+    return (fnv1a(`${this.salt}:${normalised}`) >>> 0).toString(16).padStart(8, '0')
   }
 
   tokenFor(value: string, cls: PiiClass): PseudoEntry {
@@ -63,12 +91,25 @@ export class Pseudonymizer {
       this.map.set(key, t)
       return t
     }
-    const n = (this.counters.get(cls) ?? 0) + 1
-    this.counters.set(cls, n)
-    // The session tag makes the token unlinkable across sessions while staying
-    // readable: [PERSON_1] becomes [PERSON_A3_1] once a random tag exists, and
-    // the tag is stable for the life of the session so co-reference holds.
-    const t: PseudoEntry = { token: `[${cls}_${this.tag}_${n}]`, cls }
+
+    /**
+     * The suffix is a HASH of the value, not a sequence counter.
+     *
+     * It was `(this.counters.get(cls) ?? 0) + 1`, and that could not work
+     * across contexts: the content script walks the DOM in document order and
+     * the compositor walks the detection list, so the same person arrived as
+     * the 2nd PERSON in one and the 5th in the other. `[PERSON_A3_2]` and
+     * `[PERSON_A3_5]` for one entity, and the numbering depended on how many
+     * unrelated values happened to precede it — so it was unstable between two
+     * runs over the same page too.
+     *
+     * Hashing the value makes the token a pure function of (session, class,
+     * value). Same input, same token, in any order, in any context, on any run.
+     * Cross-session unlinkability still holds because the session id is part of
+     * the hash input. This is what "stable per session" was supposed to mean.
+     */
+    const suffix = this.hash(value)
+    const t: PseudoEntry = { token: `[${cls}_${this.tag}_${suffix}]`, cls }
     this.map.set(key, t)
     return t
   }

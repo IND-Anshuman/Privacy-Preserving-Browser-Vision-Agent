@@ -194,6 +194,14 @@ def score_m2(forms: list[dict]) -> dict:
         "by_channel": {k: dict(v) for k, v in channels.items()},
         "missed_by_class": dict(sorted(missed.items(), key=lambda kv: -kv[1])),
         "note": "L0+L1 only. PERSON/ORG/MONEY recall is low BY DESIGN: regex cannot find names in prose. That gap is what L2 exists to close.",
+        "opaque_region_note": (
+            "OPAQUE_REGION is scored as a false positive here (fp=4). That is "
+            "deliberate and it is the fail-closed marker, not a detection error: "
+            "these are cross-origin/uninspectable regions the pipeline refused to "
+            "classify. Scoring them as hits would inflate precision dishonestly; "
+            "scoring them as misses would flatter it. They are reported so the "
+            "4-fp figure is explainable rather than mysterious."
+        ),
     }
 
 

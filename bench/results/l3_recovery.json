@@ -1,0 +1,40 @@
+{
+  "note": "Measured 2026-09-28 in real Chrome on real OffscreenCanvases with genuinely rendered text. bench/make_l3_recovery_harness.py inlines the actual runL3Text source extracted from models.ts.",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome",
+  "canvases": 4,
+  "pii_values_drawn": 12,
+  "stage_1_detection": {
+    "fn": "runL3Text — geometric edge-density region finder",
+    "covered": 12,
+    "of": 12,
+    "coverage": 1.0,
+    "ms_per_canvas": 9.45,
+    "measured": true
+  },
+  "stage_2_recovery": {
+    "fn": "TrOCR (trocr-small-printed, 143 MB q8)",
+    "recovered": 12,
+    "of": 12,
+    "rate": 1.0,
+    "measured": false,
+    "is_stand_in": true,
+    "why": "TrOCR has never been executed in a browser. The harness feeds the ground-truth string to stand in for the OCR output, so this number proves the LOOP is wired and the stage boundaries are correct. It does NOT prove OCR accuracy, which is the open question."
+  },
+  "stage_3_classification": {
+    "fn": "L1 re-run on the recovered strings (the step ARCHITECTURE.md §5 specifies)",
+    "hits": 8,
+    "by_class": { "EMAIL": 4, "PHONE": 4 },
+    "measured": true,
+    "note": "Runs against the stand-in strings, so it demonstrates the L1 pass fires on recovered text. On real OCR output the hit rate would depend on recognition fidelity."
+  },
+  "what_this_closes": "The loop is no longer dead code. ocrRegions had zero callers; main.ts now runs detect -> crop -> OCR -> L1/L2 -> emit a classed detection, and every stage has a measurable boundary.",
+  "what_this_does_not_close": [
+    "OCR accuracy. trocr-small-printed must be run in-browser to measure whether a 16px monospace canvas line is read back correctly, and what the character error rate is.",
+    "L2 on recovered strings is wired (runL2 over the OCR output, gated by admitL2) but exercised only through the stand-in.",
+    "The text detector remains a geometric heuristic. No browser-loadable DBNet/EAST/CRAFT export exists; see MODEL_FINDINGS in models.ts."
+  ],
+  "reproduce": [
+    "./.venv/Scripts/python.exe bench/make_l3_recovery_harness.py",
+    "open bench/l3_recovery.html in a browser"
+  ]
+}

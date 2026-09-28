@@ -62,18 +62,65 @@ except ImportError as _rel_err:  # running as a script, not as `server.app`
     from prompts import build_system_preamble
     from vllm_client import VLLMClient, VLLMUnavailable
 
-log = logging.getLogger("veil")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+log = logging.getLogger("veil")
 
 SCHEMA_VERSION = "1.0.0"
 app = FastAPI(title="Veil", version="0.1.0")
 
 # The extension is a browser origin, not a server-side caller.
+#
+# CORS here is a real control, not a formality: the extension holds a
+# capability that a web page does not — a redaction manifest, and a server that
+# will act on a screen. With `allow_origins=["*"]` (which docker-compose was
+# setting) ANY website in the user's browser could POST to this server and get
+# a plan back. So the default is deny-by-default: an explicit list, and a
+# wildcard is refused outright rather than honoured.
+#
+# The extension id is stable for a locally-loaded unpacked build, so
+# chrome-extension://<id> is the real value to configure. A dev convenience
+# remains: set VEIL_ALLOWED_ORIGINS=dev to allow any extension origin, which is
+# still narrower than "*" because it excludes http/https pages.
+_RAW_ORIGINS = os.environ.get("VEIL_ALLOWED_ORIGINS", "").strip()
+
+if _RAW_ORIGINS.lower() in {"*", "null", ""}:
+    if _RAW_ORIGINS == "":
+        _ALLOWED = []
+    else:
+        # An explicit "*" is a configuration mistake, not an intent. Refusing it
+        # means the failure mode is "the extension cannot connect" rather than
+        # "every site on the internet can drive this server".
+        log.error(
+            "VEIL_ALLOWED_ORIGINS=%r is not a valid origin list. Refusing to "
+            "start with a wildcard. Set comma-separated origins, or 'dev' to "
+            "allow any extension origin during development.",
+            _RAW_ORIGINS,
+        )
+        raise SystemExit(2)
+elif _RAW_ORIGINS.lower() == "dev":
+    _ALLOWED = [
+        "chrome-extension://*",
+        "moz-extension://*",
+    ]
+else:
+    _ALLOWED = [o.strip() for o in _RAW_ORIGINS.split(",") if o.strip()]
+
+if not _ALLOWED:
+    log.warning(
+        "No CORS origins configured: the API will accept same-origin and "
+        "non-browser callers only. A browser extension must be added to "
+        "VEIL_ALLOWED_ORIGINS (e.g. chrome-extension://abcdef...)."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("VEIL_ALLOWED_ORIGINS", "chrome-extension://*").split(","),
+    allow_origins=_ALLOWED,
     allow_methods=["GET", "POST"],
     allow_headers=["content-type"],
+    # No cookies, no credentials: nothing here is session-authenticated, and
+    # allowing credentials with a broad origin list is how a token leaks.
+    allow_credentials=False,
 )
 
 client = VLLMClient()

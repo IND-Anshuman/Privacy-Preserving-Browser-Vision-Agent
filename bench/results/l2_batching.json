@@ -1,0 +1,24 @@
+{
+  "texts": 818,
+  "max_chars": 200,
+  "batch_size": 6,
+  "per_string_ms": 2878.7,
+  "batched_ms": 3989.4,
+  "speedup": 0.72,
+  "spans_per_string": 1070,
+  "spans_batched": 1074,
+  "identical_span_lists": false,
+  "unique_overlap": "192/211",
+  "classes": {
+    "PERSON": 378,
+    "EMAIL": 94,
+    "PHONE": 240,
+    "LOCATION": 271,
+    "ORG": 82,
+    "PASSPORT": 1,
+    "DL": 4,
+    "DATE": 2,
+    "AADHAAR": 2
+  },
+  "note": "Node, CPU/WASM, no WebGPU in this runtime. Browser numbers will differ; the ratio is the point."
+}
