@@ -150,10 +150,15 @@ def _make_request(form: dict, intent: str) -> tuple[PlanRequest, set[int]]:
             image_b64=None,  # structure-only probe; the image path is exercised live
             session_id=manifest["session_id"],
             turn=0,
-            # 512 was the old cap and it truncated a plan mid-JSON on the first
-            # live run against a 30B model. A 12-step ActionPlan with reasons is
-            # ~1200 tokens, so the cap has to clear that with room to spare.
-            max_tokens=1536,
+            # Deliberately generous. max_tokens is a CEILING, not a
+            # reservation — you are billed for tokens actually generated, so a
+            # high cap costs nothing unless the model uses it. The old 512 was
+            # not a safety limit, it was a leftover, and it truncated plans
+            # mid-JSON: a 12-step ActionPlan with reasons is ~1200 tokens, and
+            # a truncated plan arrives at the client as an UNPARSEABLE one
+            # rather than a short one. 8192 clears any plan the schema allows
+            # (12 steps) with room for a thinking model to reason first.
+            max_tokens=int(os.environ.get("VEIL_LLM_MAX_TOKENS", "8192")),
         ),
         valid,
     )
