@@ -185,6 +185,38 @@ export function classifyElement(el: Element): RawHit[] {
 }
 
 /**
+ * Is this element a host whose shadow tree we cannot read?
+ *
+ * There is no API that answers this. `attachShadow({mode:'closed'})` is
+ * deliberately opaque by design, and `el.shadowRoot` is null for both "no
+ * shadow at all" and "sealed shadow". The only observable difference is that a
+ * sealed host PAINTS its shadow content while exposing no children, so:
+ *
+ *   - it has no open shadowRoot,
+ *   - it has no light children, and
+ *   - it occupies real space on screen.
+ *
+ * The test is therefore a heuristic, and the honest cost is stated: a custom
+ * element that renders itself into its own shadow tree — a web component, which
+ * is exactly the case we care about — is blanked; a plain styled <div> is not.
+ * The alternative, guessing, is what produced the 0/4 the audit found.
+ */
+function isSealedShadowHost(el: Element): boolean {
+  if ((el as Element & { shadowRoot?: unknown }).shadowRoot) return false
+  if (el.children.length > 0) return false
+  // A custom element is the overwhelmingly common sealed host. Tag names with a
+  // dash are the only way to identify one from outside the component.
+  if (!el.tagName.includes('-')) return false
+  const r = el.getBoundingClientRect()
+  if (r.width < 8 || r.height < 8) return false
+  // And it must actually paint something: a bare unstyled custom element with no
+  // box-shadow/background renders nothing, so blanking it is pure noise.
+  const cs = getComputedStyle(el)
+  if (cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0') return false
+  return true
+}
+
+/**
  * Viewport coordinates — the space the compositor draws in.
  *
  * This was `r.left + scrollX` (DOCUMENT space) and it was a real bug: the
@@ -313,6 +345,52 @@ function buildSnapshot(
       if (built) {
         children.push(built)
         childCount += 1
+      }
+    }
+
+    /**
+     * §5 shadow DOM. `el.children` does not cross a shadow boundary, so a value
+     * inside a custom element was invisible to this walk — the shadow channel
+     * scored 0/4 and nothing in the code even referenced `shadowRoot`.
+     *
+     * An OPEN root is traversable: `shadowRoot` is non-null, and we descend
+     * exactly as we would into a light child. A CLOSED root returns null for
+     * the same property, so "no shadow" and "sealed shadow" are
+     * indistinguishable from the host alone. The only reliable discriminator is
+     * observable behaviour: a sealed host paints content that `el.children`
+     * does not contain. So a host with a non-trivial painted box, no open
+     * root, and no light children is treated as sealed and FAIL-CLOSED — its
+     * rect becomes an OPAQUE_REGION and the compositor blanks it.
+     *
+     * Over-blanking a sealed host costs a useless box. Under-blanking it ships
+     * whatever a component author decided to render, which is the entire class
+     * of attack this project exists to stop.
+     */
+    const shadow = (el as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot
+    if (shadow) {
+      for (const child of Array.from(shadow.children)) {
+        if (childCount >= MAX_CHILDREN) break
+        const built = walk(child, depth + 1)
+        if (built) {
+          children.push(built)
+          childCount += 1
+        }
+      }
+    } else if (isSealedShadowHost(el)) {
+      const r = rectOf(el)
+      if (r.w >= 8 && r.h >= 8) {
+        detections.push({
+          cls: 'OPAQUE_REGION',
+          text: '',
+          score: 1,
+          start: 0,
+          end: 0,
+          source: 'L0',
+          box: r,
+        })
+        // The host's contents are not enumerable, so its light children were
+        // already walked above; there is nothing further to descend into.
+        void walk
       }
     }
 

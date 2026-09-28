@@ -6,7 +6,9 @@ import {
   l2Status,
   enabledL2Classes,
 } from '../lib/l2policy'
-import { recoverOffsets, normaliseRows, mergeTokens, MODEL_IDS } from '../entrypoints/offscreen/models'
+import {
+  recoverOffsets, normaliseRows, mergeTokens, MODEL_IDS, MODEL_FINDINGS,
+} from '../entrypoints/offscreen/models'
 import { mapL2Label, PII_MODEL_LABELS } from '../entrypoints/offscreen/ner'
 
 /**
@@ -49,8 +51,22 @@ describe('model ids are the corrected ones', () => {
     expect(MODEL_IDS.l2).not.toContain('bert-base-NER')
   })
 
-  it('uses the small NMS-free face detector rather than the 43 MB DETR', () => {
-    expect(MODEL_IDS.l3face).toBe('onnx-community/yolov10n')
+  it('uses a face detector that can actually detect a person', () => {
+    // This test used to assert `yolov10n` on the grounds that it was a "small
+    // NMS-free face detector, 3 MB". All three claims were false: the repo is
+    // 39 MB, it is a COCO detector whose 80 classes contain no "face", and it
+    // ships no id2label. It resolved, the task was valid, and the code ran —
+    // which is exactly why a passing suite did not catch it.
+    //
+    // The assertion is now on the property that matters: the chosen detector's
+    // label space must include a person class. DETR's COCO label 1 is `person`.
+    expect(MODEL_IDS.l3face).toBe('onnx-community/detr-resnet-50-ONNX')
+    expect(MODEL_FINDINGS.faceDetector).toBe('no-small-option')
+    // And the rejected candidates stay rejected, so a future "optimisation"
+    // cannot quietly reintroduce a model with no usable label space.
+    for (const bad of MODEL_FINDINGS.rejected) {
+      expect(MODEL_IDS.l3face).not.toContain(bad.split('/')[1]!)
+    }
   })
 })
 

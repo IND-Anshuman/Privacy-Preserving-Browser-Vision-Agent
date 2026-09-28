@@ -1,0 +1,67 @@
+[
+  {
+    "id": "l3face",
+    "repo": "onnx-community/yolov10n",
+    "exists": true,
+    "files": [
+      ".gitattributes",
+      "README.md",
+      "config.json",
+      "onnx/model.onnx",
+      "onnx/model_bnb4.onnx",
+      "onnx/model_fp16.onnx",
+      "onnx/model_int8.onnx",
+      "onnx/model_q4.onnx",
+      "onnx/model_quantized.onnx",
+      "onnx/model_uint8.onnx",
+      "preprocessor_config.json"
+    ],
+    "sizeBytes": 40849562,
+    "verdict": ""
+  },
+  {
+    "id": "l3ocr",
+    "repo": "Xenova/trocr-small-printed",
+    "exists": true,
+    "files": [
+      ".gitattributes",
+      "README.md",
+      "config.json",
+      "generation_config.json",
+      "onnx/decoder_model.onnx",
+      "onnx/decoder_model_merged.onnx",
+      "onnx/decoder_model_merged_fp16.onnx",
+      "onnx/decoder_model_merged_quantized.onnx",
+      "onnx/decoder_model_quantized.onnx",
+      "onnx/decoder_with_past_model.onnx",
+      "onnx/decoder_with_past_model_quantized.onnx",
+      "onnx/encoder_model.onnx",
+      "onnx/encoder_model_fp16.onnx",
+      "onnx/encoder_model_quantized.onnx",
+      "preprocessor_config.json",
+      "quantize_config.json",
+      "sentencepiece.bpe.model",
+      "special_tokens_map.json",
+      "tokenizer.json",
+      "tokenizer_config.json"
+    ],
+    "sizeBytes": 825965299,
+    "verdict": ""
+  },
+  {
+    "id": "blazeface",
+    "repo": "onnx-community/blazeface",
+    "exists": false,
+    "files": [],
+    "sizeBytes": 0,
+    "verdict": ""
+  },
+  {
+    "id": "dbnet",
+    "repo": "onnx-community/deep-text-recognition-...",
+    "exists": false,
+    "files": [],
+    "sizeBytes": 0,
+    "verdict": ""
+  }
+]

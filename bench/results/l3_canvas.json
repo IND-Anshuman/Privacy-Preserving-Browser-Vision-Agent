@@ -1,0 +1,25 @@
+{
+  "note": "Measured 2026-09-28 in real Chrome (browser_exec) on a real OffscreenCanvas with genuinely rendered text. NOT a simulation: bench/make_l3_harness.py inlines the actual runL3Text source extracted from models.ts and the page draws the detected regions over the text so the boxes can be seen.",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome",
+  "canvases_measured": 4,
+  "pii_lines_drawn": 12,
+  "covered_by_region": 12,
+  "coverage": 1.0,
+  "regions_found": 4,
+  "avg_regions_per_canvas": 1.0,
+  "avg_ms_per_canvas": 9.65,
+  "missed": [],
+  "previous_state": {
+    "canvas_recall": 0.25,
+    "note": "4 of 16 pixel-channel PII values were recovered before this. The channel is labelled `pixels`, not `canvas`; an earlier harness filtered on 'canvas', matched nothing, and reported 0/0 — a number that reads like a pass."
+  },
+  "honest_limits": [
+    "This is the DETECTOR only. End-to-end canvas safety additionally rests on the OPAQUE_REGION fail-closed rule, which redacts the whole element until L3 clears it — so a miss here is not by itself a leak.",
+    "The detector is a geometric edge-density heuristic, not a learned text detector. No browser-loadable text detector (DBNet/EAST/CRAFT) exists on the Hub; see MODEL_FINDINGS in models.ts.",
+    "Scored on 4 canvases with one text line each. Coverage on dense multi-region canvases is not established."
+  ],
+  "reproduce": [
+    "./.venv/Scripts/python.exe bench/make_l3_harness.py",
+    "open bench/l3_canvas.html in a browser"
+  ]
+}
