@@ -1,0 +1,31 @@
+{
+  "cases": 4,
+  "results": [
+    {
+      "model": "Qwen/Qwen3-VL-235B-A22B-Thinking",
+      "turns": 1,
+      "parsed": 0,
+      "used_mark": 0,
+      "invented": 0,
+      "truncated": 0,
+      "invalid": 1,
+      "latencies": [
+        8151.923400000669
+      ],
+      "in_tok": [
+        0
+      ],
+      "out_tok": [
+        0
+      ],
+      "cost_usd": 0.0,
+      "cost_known": true,
+      "error": "ProviderUnavailable: endpoint 400: {\"error\":{\"message\":\"This model is busy, please try again later.\",\"type\":\"server_error\",\"code\":\"completion_error\"}}",
+      "as_ms": 8151.923400000669,
+      "p50_ms": 8151.923400000669,
+      "p95_ms": 8151.923400000669,
+      "usd_per_turn": 0.0,
+      "verdict": "UNUSABLE"
+    }
+  ]
+}

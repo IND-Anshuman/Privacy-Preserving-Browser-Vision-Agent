@@ -1,15 +1,15 @@
 {
-  "model": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+  "model": "Qwen/Qwen3-VL-32B-Instruct",
   "provider": "openai-compatible",
   "schema_enforcement": "strict",
   "forms": 8,
   "parsed": 8,
   "used_mark": 8,
   "invented_marks": 0,
-  "latency_p50_ms": 9151,
-  "latency_max_ms": 17961,
+  "latency_p50_ms": 10094,
+  "latency_max_ms": 29162,
   "mean_input_tokens": 980,
-  "cost_per_turn_usd": 0.0003651375,
+  "cost_per_turn_usd": 0.000290628,
   "rows": [
     {
       "parses": true,
@@ -18,10 +18,10 @@
       "action": "fill",
       "confidence": 0.95,
       "form": "form_00",
-      "ms": 17961,
+      "ms": 29162,
       "in_tok": 1137,
-      "out_tok": 614,
-      "usd": 0.00047755,
+      "out_tok": 574,
+      "usd": 0.00035703199999999997,
       "truncated": false
     },
     {
@@ -31,10 +31,10 @@
       "action": "fill",
       "confidence": 0.95,
       "form": "form_01",
-      "ms": 9151,
+      "ms": 10534,
       "in_tok": 935,
-      "out_tok": 455,
-      "usd": 0.00036775,
+      "out_tok": 477,
+      "usd": 0.00029567199999999997,
       "truncated": false
     },
     {
@@ -44,10 +44,10 @@
       "action": "fill",
       "confidence": 0.95,
       "form": "form_02",
-      "ms": 15840,
+      "ms": 13999,
       "in_tok": 963,
-      "out_tok": 457,
-      "usd": 0.00037295,
+      "out_tok": 472,
+      "usd": 0.000296504,
       "truncated": false
     },
     {
@@ -55,12 +55,12 @@
       "uses_mark": true,
       "invented_marks": [],
       "action": "fill",
-      "confidence": 0.98,
+      "confidence": 0.95,
       "form": "form_03",
-      "ms": 8272,
+      "ms": 9780,
       "in_tok": 950,
-      "out_tok": 368,
-      "usd": 0.0003265,
+      "out_tok": 432,
+      "usd": 0.000278512,
       "truncated": false
     },
     {
@@ -70,10 +70,10 @@
       "action": "fill",
       "confidence": 0.95,
       "form": "form_04",
-      "ms": 6328,
+      "ms": 9728,
       "in_tok": 985,
-      "out_tok": 403,
-      "usd": 0.00034925,
+      "out_tok": 447,
+      "usd": 0.000288392,
       "truncated": false
     },
     {
@@ -83,10 +83,10 @@
       "action": "fill",
       "confidence": 0.95,
       "form": "form_05",
-      "ms": 6811,
+      "ms": 8733,
       "in_tok": 998,
-      "out_tok": 377,
-      "usd": 0.0003382,
+      "out_tok": 391,
+      "usd": 0.00026644799999999997,
       "truncated": false
     },
     {
@@ -96,10 +96,10 @@
       "action": "fill",
       "confidence": 0.95,
       "form": "form_06",
-      "ms": 12171,
+      "ms": 10094,
       "in_tok": 945,
-      "out_tok": 412,
-      "usd": 0.00034775,
+      "out_tok": 438,
+      "usd": 0.000280488,
       "truncated": false
     },
     {
@@ -109,10 +109,10 @@
       "action": "fill",
       "confidence": 0.95,
       "form": "form_07",
-      "ms": 6151,
+      "ms": 8802,
       "in_tok": 931,
-      "out_tok": 403,
-      "usd": 0.00034114999999999997,
+      "out_tok": 397,
+      "usd": 0.000261976,
       "truncated": false
     }
   ],

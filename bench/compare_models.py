@@ -22,6 +22,29 @@ Four things decide that, and all four are measured:
      UNKNOWN, never as free.
 
 Writes bench/results/model_comparison.json and prints a ranked table.
+
+MEASURED 2026-09-29 against Featherless, 6 Veil planner turns each, ceiling
+8192. This is the table the README's model section is built on:
+
+  model                        valid  mark  inv  p50 ms   p95 ms    $/turn
+  Qwen/Qwen3-VL-32B-Instruct   6/6    6/6   0    15674    24763   0.000296
+  Qwen/Qwen3-VL-30B-A3B        6/6    6/6   0    11159    22194   0.000288
+  Qwen/Qwen3-VL-8B-Instruct    6/6    6/6   0     6271    14388   0.000297
+  Qwen/Qwen3-VL-235B-A22B-Th   —      —     —    busy: "This model is busy"
+
+Two results worth not rediscovering:
+
+  * 8B is the FASTEST, not the slowest — 2.5x quicker than 32B here. On a
+    shared endpoint, throughput beats parameter count.
+  * All three emit ~450 output tokens per plan regardless of size, so plan
+    LENGTH does not distinguish them. Length is set by the schema, not by
+    capability. A bigger model is not automatically a more thorough one for
+    this task, which is why the tool ranks on grounding first.
+
+235B-A22B-Thinking is the strongest candidate on paper and was UNUSABLE on both
+attempts: the provider returned HTTP 400 "This model is busy". That is capacity,
+not capability, and it is the reason this reports UNUSABLE instead of skipping
+the row.
 """
 
 from __future__ import annotations

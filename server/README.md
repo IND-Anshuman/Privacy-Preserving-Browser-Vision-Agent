@@ -51,6 +51,43 @@ describes but does not target is not a planner, however good it looks.
 
 No API key? It says so and exits non-zero rather than reporting a fake 0%.
 
+To check the endpoint itself first — model id, whether it can actually read an
+image, and whether it supports strict schema:
+
+```bash
+./.venv/Scripts/python.exe bench/probe_endpoint.py --model <id> --api-key <key>
+```
+
+## Measured model results
+
+Featherless, 6 Veil planner turns each, 8192-token ceiling, 2026-09-29.
+Reproduce with `bench/compare_models.py`.
+
+| model | valid | used a mark | invented | p50 | p95 | $/turn |
+|---|---|---|---|---|---|---|
+| `Qwen/Qwen3-VL-8B-Instruct` | 6/6 | 6/6 | **0** | **6271 ms** | 14388 ms | $0.000297 |
+| `Qwen/Qwen3-VL-30B-A3B-Instruct` | 6/6 | 6/6 | **0** | 11159 ms | 22194 ms | $0.000288 |
+| `Qwen/Qwen3-VL-32B-Instruct` | 6/6 | 6/6 | **0** | 15674 ms | 24763 ms | $0.000296 |
+| `Qwen/Qwen3-VL-235B-A22B-Thinking` | — | — | — | provider busy | — | — |
+
+Three findings that are not obvious:
+
+1. **The 8B is the fastest**, 2.5× quicker than the 32B. On a shared endpoint,
+   throughput beats parameter count.
+2. **All three emit ~450 output tokens per plan regardless of size.** Plan
+   *length* is set by the schema, not by capability, so a bigger model is not
+   automatically more thorough here. This is why the tooling ranks on grounding
+   first and treats length as uninformative.
+3. **235B-A22B-Thinking is the strongest on paper and was unavailable on both
+   attempts** — HTTP 400, *"This model is busy"*. That is capacity, not
+   capability. If your credits allow it, it is the one worth retrying.
+
+`max_tokens` is a **ceiling, not a reservation** — you pay only for tokens
+actually generated, so a high cap costs nothing unless the model uses it. The
+default is 8192, which clears any plan the 12-step schema allows. The old 512
+was not a safety limit, it was a leftover, and it truncated plans mid-JSON —
+which reaches the client as an *unparseable* plan rather than a short one.
+
 ## Provider capabilities are declared, not assumed
 
 Providers do not make the same promises, and the difference is a privacy
