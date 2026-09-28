@@ -8,11 +8,17 @@ import { parseMessage, type PressureState, type VeilMessage } from '@/lib/messag
 import { defineUnlistedScript } from 'wxt/sandbox'
 import type { PiiClass } from '@/lib/schema'
 import { detectCaptureCaps, chooseMode, createCapturer, capToWidth, type CaptureCaps, type Capturer } from './capture'
-import { initDevice, runL2, mapL2Label, getDeviceInfo, getSession, getLoadTimings, MODEL_IDS, PromptApiTier0 } from './models'
+import { initDevice, runL2, getDeviceInfo, getSession, getLoadTimings, getLoadErrors, MODEL_IDS, PromptApiTier0 } from './models'
+import { mapL2Label } from './ner'
 import { redactFrame } from './redact'
 import { PressureMonitor, planFor as pressurePlan, type CascadePlan } from './pressure'
-import { dhash, evaluateGate, commitGate, newGateState, toLumaThumbnail, type GateState } from '@/lib/framediff'
+import {
+  dhash, evaluateGate, commitGate, newGateState, toLumaThumbnail, domStructuralHash, fnv1a,
+  coalesceTiles,
+  type GateState, type GateDecision,
+} from '@/lib/framediff'
 import { nerBatchSize } from '@/lib/device'
+import { l2Enabled } from '@/lib/l2policy'
 import { type MarkAssignment } from '@/lib/som'
 
 const log = (m: string): void => {
@@ -72,7 +78,7 @@ function start(): void {
   // prefetch), so the first real run does not pay session-construction cost.
   void (async () => {
     await initDevice()
-    await getSession('l3face')
+    void getSession('l3face')
   })()
 }
 
@@ -180,13 +186,28 @@ async function runCapture(
     /* ---- frame-diff gate (§7): the metric-4 headline ---- */
     const thumb = new OffscreenCanvas(64, 64)
     const tctx = thumb.getContext('2d', { willReadFrequently: true })
+    /** Hoisted out of the thumbnail block so the tile report below can use it. */
+    let decision: GateDecision | null = null
     let frameHash = dhash(new Float32Array(64 * 64))
     if (tctx) {
       tctx.drawImage(source as CanvasImageSource, 0, 0, 64, 64)
       const img = tctx.getImageData(0, 0, 64, 64)
       const luma = toLumaThumbnail(img.data, 64, 64)
-      const domHash = String(domItems.length)
-      const decision = evaluateGate(gate, luma, domHash)
+      // The DOM half of the gate must fingerprint WHAT was detected, not HOW
+      // MANY. `String(domItems.length)` meant typing into a field — or a script
+      // filling one in — left the count unchanged, the gate reported
+      // "unchanged", and the run proceeded with a STALE MANIFEST, so the new
+      // PII was never redacted. [audit 1.3]
+      const domHash = domStructuralHash(
+        domItems.map((i) => ({
+          role: i.cls,
+          // The VALUE participates, hashed. A name and a different name are
+          // different content even when the class is identical.
+          label: `${i.cls}:${(i.text ?? '').length}:${fnv1a(i.text ?? '')}`,
+          valueClass: i.source,
+        })),
+      )
+      decision = evaluateGate(gate, luma, domHash)
       commitGate(gate, luma, domHash)
       frameHash = gate.prevFrameHash ?? frameHash
       if (!decision.proceed) {
@@ -200,7 +221,10 @@ async function runCapture(
     }
 
     /* ---- L2 over DOM text (when the cascade allows it) ---- */
-    const useL2 = plan?.L2 ?? true
+    // Gated on the MEASURED policy, not on pressure alone. Previously the
+    // policy file existed but was imported nowhere, so a "disabled" layer was
+    // still attempting a 27 MB model load on every single cycle. [audit 2.4]
+    const useL2 = l2Enabled(plan?.L2 ?? true)
     const useL3 = plan?.L3 ?? true
     const items = [...domItems]
     const timings: Record<string, number> = {}
@@ -254,11 +278,15 @@ async function runCapture(
       items,
       marks,
       frameHash,
+      // §7: the dirty tiles travel into the compositor, which crops them from
+      // the redacted canvas before releasing it. Passing them here rather than
+      // cropping afterwards is what keeps the raw-frame invariant intact.
+      tiles: coalesceTiles(decision?.tiles ?? []),
       sessionId: runId,
       modelVersions: {
         l2: MODEL_IDS.l2,
         l3face: MODEL_IDS.l3face,
-        l3text: MODEL_IDS.l3text,
+        l3text: MODEL_IDS.l3ocr,
         runtime: getDeviceInfo().device,
       },
     })
@@ -274,6 +302,27 @@ async function runCapture(
     }
 
     const b64 = await blobToBase64(out.blob)
+
+    /**
+     * §7 delta-tile upload, for turns 2..N of a multi-step task.
+     *
+     * The frame-diff gate already computed which 64×64 tiles changed, so the
+     * client knows the dirty region without re-scanning anything. This reports
+     * it alongside the full frame; the service worker decides whether to send
+     * the whole thing or just the tiles, and the server re-composites tiles
+     * against the last full frame for the session.
+     *
+     * The full frame is still produced and still goes through the gate on every
+     * turn. That is deliberate: the privacy argument is about what the SERVER
+     * receives, and the fail-closed gate has to see the complete redacted frame
+     * to be able to assert that every opaque region was covered. Skipping
+     * redaction of unchanged tiles would be faster and would quietly reopen the
+     * hole this project exists to close.
+     */
+    // The compositor crops the tiles itself, from the redacted canvas, before
+    // that reference is released. See redact.ts:cropTiles.
+    const changedTiles = out.tiles
+
     await chrome.runtime.sendMessage({
       kind: 'redact:ready',
       runId,
@@ -281,10 +330,18 @@ async function runCapture(
       verdict: out.verdict,
       webpB64: b64,
       bytes: out.bytes,
+      tiles: changedTiles,
+      frameWidth: out.frameWidth,
+      frameHeight: out.frameHeight,
       timings: { ...out.timings, ...timings, capture: performance.now() - t0 },
     })
     void broadcastStatus()
-    return { ok: true, bytes: out.bytes, redactions: out.manifest.redactions.length }
+    return {
+      ok: true,
+      bytes: out.bytes,
+      redactions: out.manifest.redactions.length,
+      tiles: changedTiles.length,
+    }
   } finally {
     // Belt and braces: if any throw path skipped the close above, close here.
     if (source) {

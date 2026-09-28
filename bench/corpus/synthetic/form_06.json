@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f06_summary_address",
+      "cls": "ADDRESS",
+      "value": "226, MG Road, Pune 411001",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        93,
+        118
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f06_student_id",
       "cls": "BANK_ACCOUNT",
       "value": "STU58211",

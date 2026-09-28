@@ -46,7 +46,17 @@ export const MessageSchema = z.discriminatedUnion('kind', [
   // SW → content
   z.object({ kind: z.literal('content:snapshot'), runId: z.string() }),
   z.object({ kind: z.literal('content:execute'), runId: z.string(), action: z.unknown() }),
-  z.object({ kind: z.literal('content:confirm'), runId: z.string(), actionIndex: z.number().int(), label: z.string() }),
+  z.object({
+    kind: z.literal('content:confirm'),
+    runId: z.string(),
+    actionIndex: z.number().int(),
+    label: z.string(),
+    /**
+     * The user's actual decision. Absent means approved, but an explicit
+     * `false` must be honoured — the run is cancelled, not proceeded.
+     */
+    approved: z.boolean().optional(),
+  }),
   z.object({ kind: z.literal('content:teardown') }),
 
   // content → SW
@@ -56,11 +66,44 @@ export const MessageSchema = z.discriminatedUnion('kind', [
     screenState: ScreenStateSchema,
     rawDetections: z.array(z.unknown()),
     /**
+     * Set-of-Mark assignments. These MUST be carried to the compositor: the
+     * badges are what make `{"target":{"mark":17}}` resolvable in the image the
+     * server receives, and sending an empty array (as this once did) makes the
+     * whole grounding mechanism inert.
+     */
+    marks: z
+      .array(
+        z.object({
+          mark: z.number().int().positive(),
+          nodeId: z.string(),
+          role: z.string(),
+          label: z.string(),
+          box: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }),
+        }),
+      )
+      .default([]),
+    /**
      * True when at least one iframe refused injection (cross-origin, or CSP
      * blocked the content script). The gate treats such a frame as fully
      * sensitive and refuses to emit unless it is covered. [§5]
      */
-    crossOriginSuspect: z.boolean().default(false),
+    crossOriginSuspect: z.boolean().optional(),
+    /**
+     * Frames that refused inspection. Each carries a full-region redaction box,
+     * so this is a fail-closed ACTION rather than a warning: the compositor
+     * fills these solid and the gate aborts if any is left uncovered. [§5, §6.3]
+     */
+    opaqueFrames: z
+      .array(
+        z.object({
+          src: z.string(),
+          x: z.number().finite(),
+          y: z.number().finite(),
+          w: z.number().finite().nonnegative(),
+          h: z.number().finite().nonnegative(),
+        }),
+      )
+      .optional(),
   }),
   z.object({ kind: z.literal('execute:done'), runId: z.string(), actionIndex: z.number().int(), ok: z.boolean(), status: z.string(), ms: z.number() }),
   z.object({ kind: z.literal('execute:confirm_required'), runId: z.string(), actionIndex: z.number().int(), label: z.string() }),
@@ -73,7 +116,33 @@ export const MessageSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('offscreen:release') }),
 
   // offscreen → SW
-  z.object({ kind: z.literal('redact:ready'), runId: z.string(), manifest: RedactionManifestSchema, verdict: GateVerdictSchema, webpB64: z.string().optional(), bytes: z.number(), timings: z.record(z.number()) }),
+  z.object({
+    kind: z.literal('redact:ready'),
+    runId: z.string(),
+    manifest: RedactionManifestSchema,
+    verdict: GateVerdictSchema,
+    webpB64: z.string().optional(),
+    bytes: z.number(),
+    /**
+     * §7 delta tiles. Present on every run; the SW uses them for turns 2..N of
+     * a task. Empty on the first frame, where everything is new.
+     */
+    tiles: z
+      .array(
+        z.object({
+          x: z.number(),
+          y: z.number(),
+          w: z.number(),
+          h: z.number(),
+          /** Base64 PNG cropped from the REDACTED frame. See redact.ts:cropTiles. */
+          b64: z.string().optional(),
+        }),
+      )
+      .optional(),
+    frameWidth: z.number().optional(),
+    frameHeight: z.number().optional(),
+    timings: z.record(z.number()),
+  }),
   z.object({ kind: z.literal('redact:aborted'), runId: z.string(), reason: z.string() }),
   z.object({ kind: z.literal('offscreen:status'), captureMode: z.string(), pressure: z.enum(PRESSURE_STATES), heapMb: z.number().optional(), adapter: z.string().optional(), rows: z.array(z.unknown()) }),
   z.object({ kind: z.literal('offscreen:prefetched'), sessionId: z.string() }),

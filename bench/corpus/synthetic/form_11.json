@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f11_summary_address",
+      "cls": "ADDRESS",
+      "value": "287, Park Street, Chennai 600002",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        97,
+        129
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f11_password",
       "cls": "PASSWORD",
       "value": "xIHeNNPaodFGsh",

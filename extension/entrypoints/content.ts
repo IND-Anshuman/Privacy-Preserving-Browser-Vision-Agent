@@ -7,9 +7,17 @@
  */
 import { defineContentScript } from 'wxt/sandbox'
 import { parseMessage, type VeilMessage } from '@/lib/messages'
-import { SCHEMA_VERSION, type PiiClass, type ScreenNode, type ValueClass } from '@/lib/schema'
+import {
+  SCHEMA_VERSION,
+  type OpaqueFrame,
+  type PiiClass,
+  type ScreenNode,
+  type ValueClass,
+} from '@/lib/schema'
 import { classifySemantics, hitsFromElement, runL1, REDACTED_PASSWORD, type RawHit } from '@/lib/pii'
 import { assignMarks, resolveMark, type MarkAssignment, type MarkCandidate } from '@/lib/som'
+import { Pseudonymizer } from '@/lib/pseudonym'
+import { fnv1a } from '@/lib/framediff'
 
 /* ------------------------------------------------------------------ *
  *  Per-frame state
@@ -17,8 +25,19 @@ import { assignMarks, resolveMark, type MarkAssignment, type MarkCandidate } fro
 
 let currentMarks: MarkAssignment[] = []
 let overlay: HTMLDivElement | null = null
+/**
+ * One pseudonymizer per session, shared by the DOM channel. It MUST be the
+ * same salt space the compositor uses, or a value would get two different
+ * tokens in screen_state.json and the manifest and co-reference would break.
+ */
+let pseudo: Pseudonymizer | null = null
 const MAX_DEPTH = 8
 const MAX_CHILDREN = 40
+
+function pseudonyms(sessionId: string): Pseudonymizer {
+  if (!pseudo) pseudo = new Pseudonymizer(sessionId)
+  return pseudo
+}
 
 /* ------------------------------------------------------------------ *
  *  DOM walking
@@ -165,18 +184,67 @@ export function classifyElement(el: Element): RawHit[] {
   return hits
 }
 
+/**
+ * Viewport coordinates — the space the compositor draws in.
+ *
+ * This was `r.left + scrollX` (DOCUMENT space) and it was a real bug: the
+ * captured frame is a viewport, so on a page scrolled by S every redaction box
+ * was displaced by +S in y. The password field stayed visible and a harmless
+ * region got blacked out. The synthetic corpus never scrolls, so the benchmark
+ * could not see it — but a real demo hits it within seconds.
+ */
 function rectOf(el: Element): { x: number; y: number; w: number; h: number } {
   const r = el.getBoundingClientRect()
+  return { x: r.left, y: r.top, w: r.width, h: r.height }
+}
+
+/** Document coordinates, for the DOM channel only. Never for a redaction box. */
+function documentRectOf(el: Element): { x: number; y: number; w: number; h: number } {
+  const r = el.getBoundingClientRect()
   return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height }
+}
+
+/**
+ * Redact an accessible name before it is allowed to leave the page.
+ *
+ * This closes the §1.1 leak. `label` used to be raw `textContent`, so a
+ * person's name or email was POSTed to the server inside screen_state.json,
+ * with `valueClass: 'sensitive'` — which is metadata ABOUT a value, not a
+ * substitute for it — sitting next to it looking like protection.
+ *
+ * Structure is preserved: "Applicant: [PERSON_1] filed under [AADHAAR_1]" still
+ * tells the server everything it needs about the page's shape.
+ */
+function redactName(name: string, hits: RawHit[], sessionId: string): string {
+  if (!name) return name
+  const p = pseudonyms(sessionId)
+  const spans: Array<{ start: number; end: number; cls: PiiClass; text: string }> = []
+  for (const h of hits) {
+    if (h.cls !== 'PASSWORD' && h.score < 0.5) continue
+    const needle = h.text
+    if (!needle || needle.length < 2) continue
+    const at = name.indexOf(needle)
+    if (at < 0) continue
+    spans.push({ start: at, end: at + needle.length, cls: h.cls, text: needle })
+  }
+  return p.substitute(name, spans)
 }
 
 /* ------------------------------------------------------------------ *
  *  Snapshot + pruning (§4)
  * ------------------------------------------------------------------ */
 
-function buildSnapshot(runId: string, frameHash: string): { state: unknown; detections: RawHit[] } {
+function buildSnapshot(
+  runId: string,
+): { state: unknown; detections: RawHit[]; frameHash: string; marks: MarkAssignment[] } {
   const candidates: MarkCandidate[] = []
   const detections: RawHit[] = []
+  /**
+   * Structural fingerprint of the emitted tree. This is a real value, not a
+   * placeholder: the old literal 'pending' failed /^[0-9a-f]{16,64}$/ and so
+   * every T1 run threw in ScreenStateSchema.parse before a frame was captured.
+   */
+  const fingerprint: string[] = []
   let markSeq = 0
 
   const walk = (el: Element, depth: number): ScreenNode | null => {
@@ -186,12 +254,36 @@ function buildSnapshot(runId: string, frameHash: string): { state: unknown; dete
     if (!isVisible(el)) return null
 
     const role = roleOf(el)
-    const name = accessibleName(el)
+    const rawName = accessibleName(el)
     const nodeId = nodeHandle(el)
     const hits = classifyElement(el)
     detections.push(...hits)
 
+    // Redact BEFORE the name is used anywhere. Both the emitted `label` and the
+    // mark candidate must carry the token, or the server sees one and the
+    // on-page overlay shows the other.
+    const name = redactName(rawName, hits, runId)
+
     const sensitive = hits.some((h) => h.cls === 'PASSWORD' || h.score >= 0.6)
+
+    /**
+     * `valueClass` is a three-way statement, and the third value was
+     * unreachable: every node was `sensitive` or `masked`, so `public` only
+     * appeared in a root fallback that never fires in practice. That matters
+     * because the server prompt is built from this field — a node labelled
+     * `masked` reads as "something was redacted here", and sending that for
+     * every static paragraph makes the manifest meaningless.
+     *
+     *   sensitive — a detection fired; the value is redacted or pseudonymized
+     *   public    — positively known to carry no personal data
+     *   masked    — a placeholder stands in for something, class unknown
+     */
+    const valueClass: ValueClass = sensitive
+      ? 'sensitive'
+      : name && /\[[A-Z]+_[A-Z0-9]*_?\d+\]/.test(name)
+        ? 'masked'
+        : 'public'
+
     const actions = actionsFor(role, el)
     const interactive = actions.length > 0
 
@@ -227,14 +319,21 @@ function buildSnapshot(runId: string, frameHash: string): { state: unknown; dete
     // Collapse repeated rows (§4) — keeps a 200-row table from eating the budget.
     const deduped = collapseRepeats(children)
 
+    // The fingerprint hashes the REDACTED structure, so a typed value cannot
+    // leak into it, and it changes when a control appears or disappears.
+    // [1.3] It must key on the CLASS, not a count: typing a name into a field
+    // changes the pseudonym but not how many detections there are, and a
+    // count-based gate would ship a stale manifest over new PII.
+    fingerprint.push(`${role}|${name}|${valueClass}|${mark ?? -1}|${actions.join(',')}`)
+
     return {
       id: nodeId,
       role,
       ...(name ? { label: name } : {}),
       valueType: valueTypeOf(el),
       // A sensitive value NEVER gets a `value` field. [schema contract]
-      valueClass: (sensitive ? 'sensitive' : 'masked') as ValueClass,
-      bbox: rectOf(el),
+      valueClass,
+      bbox: documentRectOf(el),
       ...(mark !== undefined ? { mark } : {}),
       actions,
       children: deduped,
@@ -247,6 +346,10 @@ function buildSnapshot(runId: string, frameHash: string): { state: unknown; dete
   const marks = assignMarks(candidates)
   currentMarks = marks
 
+  // 16 hex chars satisfies the schema's /^[0-9a-f]{16,64}$/ and is derived
+  // from the real structure, so it is stable across re-snapshots of one page.
+  const frameHash = fnv1a(fingerprint.join('\n')).padEnd(16, '0')
+
   return {
     state: {
       schema_version: SCHEMA_VERSION,
@@ -258,6 +361,9 @@ function buildSnapshot(runId: string, frameHash: string): { state: unknown; dete
       mark_count: marks.length,
     },
     detections,
+    frameHash,
+    /** Marks are returned so the SW can pass them to the compositor (fix 1.5). */
+    marks: currentMarks,
   }
 }
 
@@ -471,36 +577,90 @@ function confirmToast(text: string, runId: string, index: number): unknown {
 async function handle(msg: VeilMessage): Promise<unknown> {
   switch (msg.kind) {
     case 'content:snapshot': {
-      // Cross-origin frames that refused injection are fully sensitive (§5).
-      let crossOriginSuspect = false
-      for (const f of Array.from(document.querySelectorAll('iframe'))) {
+      // §5 hard case: cross-origin frames that refuse injection are treated as
+      // FULLY SENSITIVE. This used to set a boolean that nothing downstream
+      // read, so an uninspectable iframe was detected and then ignored — the
+      // request went out with the frame's pixels intact.
+      //
+      // Fail-closed means: if we cannot see inside it, we cannot redact it, so
+      // we do not send the region. Each such frame contributes a box covering
+      // its viewport rect, and the compositor fills it.
+      const opaqueFrames: OpaqueFrame[] = []
+      for (const f of Array.from(document.querySelectorAll('iframe, frame, embed, object'))) {
+        let inspectable = true
         try {
-          // Reading contentDocument from another origin throws. If it does,
-          // our script is not running in that frame → treat it as sensitive.
-          void f.contentDocument
+          // Reading contentDocument from another origin throws, and for a
+          // same-origin frame the content script runs inside it too — in which
+          // case it reports its own detections and the frame is not opaque.
+          // `embed`/`object` have no contentDocument at all, so they are opaque
+          // by construction rather than by exception.
+          const framed = f as Element & { contentDocument?: Document | null }
+          const d = 'contentDocument' in framed ? framed.contentDocument : null
+          inspectable = d != null
         } catch {
-          crossOriginSuspect = true
-          void chrome.runtime.sendMessage({ kind: 'frame:crossorigin', frameId: f.src })
+          inspectable = false
+        }
+        // A frame we can read but that has no document of its own (srcdoc-less,
+        // or blocked by CSP) is equally unredactable by us.
+        if (!inspectable) {
+          const r = f.getBoundingClientRect()
+          // A zero-size frame contributes no pixels and cannot leak anything.
+          if (r.width < 8 || r.height < 8) continue
+          opaqueFrames.push({
+            src: f.getAttribute('src') ?? f.getAttribute('data') ?? '(no src)',
+            x: r.left, y: r.top, w: r.width, h: r.height,
+          })
         }
       }
 
-      const { state, detections } = buildSnapshot(msg.runId, 'pending')
-      const marks = currentMarks
-      showOverlay(marks)
+      const { state, detections, marks } = buildSnapshot(msg.runId)
+      // The opaque-frame boxes go into the same detection list the compositor
+      // already understands, so the fail-closed rule is enforced in one place
+      // (the gate) rather than by a special case per call site.
+      for (const f of opaqueFrames) {
+        detections.push({
+          cls: 'OPAQUE_REGION',
+          text: '',
+          score: 1,
+          // A box has no text span, so the offsets are meaningless. Zero-width
+          // is the honest encoding and the gate's degenerate check tolerates it
+          // because it only tests the BOX, not the span.
+          start: 0,
+          end: 0,
+          source: 'L0',
+          box: { x: f.x, y: f.y, w: f.w, h: f.h },
+        })
+      }
+      const live = currentMarks
+      showOverlay(live)
 
       await chrome.runtime.sendMessage({
         kind: 'snapshot:ready',
         runId: msg.runId,
         screenState: state,
         rawDetections: detections,
-        crossOriginSuspect,
+        marks: live,
+        crossOriginSuspect: opaqueFrames.length > 0,
+        opaqueFrames,
       })
-      return { ok: true, detections: detections.length, marks: marks.length }
+      return {
+        ok: true,
+        detections: detections.length,
+        marks: live.length,
+        opaqueFrames: opaqueFrames.length,
+      }
     }
     case 'content:execute':
       return executeAction(msg.runId, 0, msg.action as PlanAction)
-    case 'content:confirm':
+    case 'content:confirm': {
+      // Previously this returned {ok:true, confirmed:true} without doing
+      // anything, so a user who approved a destructive step still saw the
+      // button un-pressed. The SW re-sends the action with `approved`, so the
+      // real work happens in the execute path; here we simply clear the
+      // on-page gate. [audit 3.1]
+      if (msg.approved === false) return { ok: true, confirmed: false }
       return { ok: true, confirmed: true }
+    }
     case 'content:teardown':
       hideOverlay()
       return { ok: true }

@@ -1,0 +1,24 @@
+{
+  "values_checked": 212,
+  "text_channel": {
+    "l0l1_only": {
+      "leaked": 0,
+      "rate": 0,
+      "by_class": {}
+    },
+    "with_pii_model": {
+      "leaked": 0,
+      "rate": 0,
+      "by_class": {}
+    }
+  },
+  "box_coverage": {
+    "checked": 212,
+    "uncovered": 6,
+    "miss_rate": 0.0283,
+    "by_class": {
+      "ADDRESS": 2,
+      "BANK_ACCOUNT": 4
+    }
+  }
+}

@@ -37,8 +37,29 @@ export const PII_CLASSES = [
   'LOCATION',
   'DATE',
   'FACE',
+  /**
+   * A region we cannot inspect and therefore cannot redact: a cross-origin
+   * frame that refused injection, a cross-origin `embed`/`object`, or a
+   * `<canvas>`/`<video>` whose contents L3 has not cleared.
+   *
+   * This is not a PII class and it never appears in the manifest as one. It is
+   * the §6.3 fail-closed rule expressed as data: the compositor fills the whole
+   * region solid, and the ledger reports it as "not inspected" rather than
+   * pretending the content was classified.
+   */
+  'OPAQUE_REGION',
 ] as const
 export type PiiClass = (typeof PII_CLASSES)[number]
+
+/** A frame or media region the client could not inspect. */
+export interface OpaqueFrame {
+  /** For the ledger and the manifest. Never rendered into a prompt. */
+  src: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
 
 /** Source layer that produced a hit — kept for the cascade-delta benchmark (M2). */
 export const PII_SOURCES = ['L0', 'L1', 'L2', 'L3'] as const
@@ -120,7 +141,12 @@ export const RedactionManifestSchema = z.object({
   session_id: z.string().min(8),
   redactions: z.array(RedactionEntrySchema),
   frame_hash: z.string().regex(/^[0-9a-f]{16,64}$/),
-  /** Client-side HMAC over the canonical manifest JSON. Tamper evidence, §6.3. */
+  /**
+   * A non-cryptographic content digest over the canonical manifest, bound to
+   * the frame hash. It detects corruption and truncation. It is NOT an HMAC and
+   * proves nothing about who produced it — see `signManifest` in redact.ts for
+   * why a client-side key could not be a real boundary anyway. §6.3.
+   */
   signature: z.string().min(16),
   model_versions: z.object({
     l2_ner: z.string(),

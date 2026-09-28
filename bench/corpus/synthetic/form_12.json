@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f12_summary_address",
+      "cls": "ADDRESS",
+      "value": "315, Sector 18, Delhi 110001",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        95,
+        123
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f12_aadhaar",
       "cls": "AADHAAR",
       "value": "355078077026",

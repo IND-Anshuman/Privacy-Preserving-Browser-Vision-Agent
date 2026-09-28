@@ -55,13 +55,22 @@ export default defineConfig({
         },
       ],
 
-      // The offscreen document is the only context that ever touches raw
-      // pixels. A strict CSP here is the enforcement mechanism behind the
-      // "raw pixels never reach the network" invariant — connect-src is the
-      // extension origin, so this document cannot reach the internet at all.
-      // [ARCHITECTURE §6.3]
+      // THE OFFSCREEN DOCUMENT GETS ITS OWN, STRICTER POLICY.
+      // It is the only context that ever holds raw pixels, and it makes no
+      // outbound request at all, so `connect-src 'self'` is correct and is the
+      // mechanism behind the "raw pixels never reach the network" invariant.
+      //
+      // Note the conflict this resolves: the page-level CSP in
+      // offscreen/index.html applies to that document alone, so the worker is
+      // free to talk to the server without weakening the pixel sandbox at all.
+      // Setting extension_pages to 'self' only — as this did — blocked the one
+      // fetch that makes T1 work. [audit 1.8]
       content_security_policy: {
-        extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self'",
+        extension_pages:
+          `script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; ` +
+          // 'self' covers extension-internal fetches; the configured server
+          // origin is the single external destination this extension has.
+          `connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 https:;`,
       },
     }
   },

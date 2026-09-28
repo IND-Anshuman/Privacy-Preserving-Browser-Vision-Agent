@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f18_summary_address",
+      "cls": "ADDRESS",
+      "value": "179, FC Road, Chennai 600002",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        93,
+        121
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f18_ssn_equiv",
       "cls": "BANK_ACCOUNT",
       "value": "970932154068",

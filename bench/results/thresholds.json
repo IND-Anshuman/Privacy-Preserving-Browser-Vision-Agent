@@ -1,0 +1,128 @@
+{
+  "measured": true,
+  "model": "onnx-community/bert-small-pii-detection-ONNX",
+  "l2_inference_s": 4,
+  "l2_spans": 1185,
+  "l01_spans": 174,
+  "l0l1_only": {
+    "precision": 0.954,
+    "recall": 0.6694,
+    "f1": 0.7867
+  },
+  "tuned": {
+    "precision": 0.72,
+    "recall": 0.7984,
+    "f1": 0.7572
+  },
+  "delta": {
+    "f1": -0.0296,
+    "recall": 0.129,
+    "precision": -0.234
+  },
+  "tau": {
+    "DATE": 0.9,
+    "EMAIL": 0.98,
+    "LOCATION": 1.01,
+    "ORG": 0.95,
+    "PASSPORT": 0.5,
+    "PERSON": 0.99,
+    "PHONE": 0.99
+  },
+  "per_class": {
+    "PERSON": {
+      "g": 54,
+      "b": 42,
+      "f": 53
+    },
+    "EMAIL": {
+      "g": 48,
+      "b": 40,
+      "f": 40
+    },
+    "PHONE": {
+      "g": 56,
+      "b": 40,
+      "f": 40
+    },
+    "DOB": {
+      "g": 20,
+      "b": 20,
+      "f": 20
+    },
+    "PASSWORD": {
+      "g": 10,
+      "b": 10,
+      "f": 10
+    },
+    "AADHAAR": {
+      "g": 10,
+      "b": 10,
+      "f": 10
+    },
+    "PAN": {
+      "g": 4,
+      "b": 4,
+      "f": 4
+    },
+    "CREDIT_CARD": {
+      "g": 8,
+      "b": 4,
+      "f": 4
+    },
+    "IFSC": {
+      "g": 2,
+      "b": 2,
+      "f": 2
+    },
+    "BANK_ACCOUNT": {
+      "g": 10,
+      "b": 4,
+      "f": 4
+    },
+    "GSTIN": {
+      "g": 4,
+      "b": 4,
+      "f": 4
+    },
+    "ADDRESS": {
+      "g": 4,
+      "b": 2,
+      "f": 2
+    },
+    "FACE": {
+      "g": 4,
+      "b": 0,
+      "f": 0
+    },
+    "API_KEY": {
+      "g": 4,
+      "b": 2,
+      "f": 2
+    },
+    "MONEY": {
+      "g": 2,
+      "b": 0,
+      "f": 0
+    },
+    "ORG": {
+      "g": 2,
+      "b": 0,
+      "f": 0
+    },
+    "PASSPORT": {
+      "g": 2,
+      "b": 2,
+      "f": 2
+    },
+    "DL": {
+      "g": 2,
+      "b": 2,
+      "f": 2
+    },
+    "IP_ADDRESS": {
+      "g": 2,
+      "b": 0,
+      "f": 0
+    }
+  }
+}

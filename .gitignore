@@ -6,5 +6,5 @@ dist/
 __pycache__/
 *.pyc
 .venv/
-bench/results/
+.hf-cache/
 .DS_Store

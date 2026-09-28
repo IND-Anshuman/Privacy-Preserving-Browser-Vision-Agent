@@ -6,7 +6,7 @@
   "split": "synthetic",
   "adversarial_kind": 0,
   "html": "form_10.html",
-  "sha256": "c3254388b8309308a5c901d2595a2a151cde21320c17169d790ecff7bc75b6de",
+  "sha256": "56ef192a780613e77fa9d061f81f9ff0618602933a03b4dd4fd5b40cd876d8df",
   "notes": "category=banking; adversarial=0",
   "instances": [
     {
@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f10_summary_address",
+      "cls": "ADDRESS",
+      "value": "238,  Brigade Road, Delhi 110001",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        89,
+        121
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f10_password",
       "cls": "PASSWORD",
       "value": "weXAa5NoZ77xp7",
@@ -162,7 +177,7 @@
     {
       "id": "f10_card_number",
       "cls": "CREDIT_CARD",
-      "value": "4539301825916913",
+      "value": "4539005342324606",
       "channel": "dom",
       "node_id": "card_number",
       "selector": "#card_number",

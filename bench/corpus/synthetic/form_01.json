@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f01_summary_address",
+      "cls": "ADDRESS",
+      "value": "337, Park Street, Chennai 600002",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        91,
+        123
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f01_password",
       "cls": "PASSWORD",
       "value": "0PCZSpZAbobvT5",

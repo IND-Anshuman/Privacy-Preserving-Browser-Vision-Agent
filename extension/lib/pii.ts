@@ -231,6 +231,12 @@ export interface ElementLike {
   dataAttrs?: Record<string, string>
   box?: Box
   nodeId?: string
+  /**
+   * Set by the offscreen L3 pass once OCR over this canvas has run and found no
+   * PII. Until then the element is fail-closed redacted. See the `canvas`
+   * branch in classifyElement.
+   */
+  clearedByL3?: boolean
 }
 
 /**
@@ -314,7 +320,72 @@ export function classifySemantics(el: ElementLike): SemanticVerdict {
         looksLikeIdentityImage: true,
       }
     }
+    // §1.7: a <video> is a moving canvas. A webcam preview or a video of a
+    // document is exactly the "PII in a video frame" case from the demo's
+    // hard-mode appendix, and it is invisible to the DOM channel. Fail-closed
+    // until L3 has run OCR over the current frame. An <img> is exempt because
+    // L0/L1 sees its alt and the §5 image rules cover identity photos; a video
+    // has no such static description.
+    if (el.tag === 'video') {
+      if (el.clearedByL3) return none
+      return {
+        cls: 'OPAQUE_REGION',
+        isPassword: false,
+        reason: 'video frames are not inspectable by the DOM channel; fail-closed until L3 clears the frame',
+        looksLikeIdentityImage: false,
+      }
+    }
     return none
+  }
+
+  /**
+   * §5 / §12: text drawn into a `<canvas>` or played in a `<video>` is invisible
+   * to every DOM rule. The DOM channel cannot see it, and the only detector that
+   * can is L3 (text regions → OCR → re-run L1/L2 on the recovered string).
+   *
+   * Until L3 has actually cleared a region, the fail-closed rule applies: the
+   * whole element is redacted. That is deliberately expensive — a captcha or a
+   * chart is also a canvas — because the cost of over-redacting a chart is a
+   * useless box, and the cost of under-redacting a canvas is a leaked Aadhaar
+   * number. The architecture's risk table says exactly this, and this is where
+   * that promise is kept.
+   *
+   * `clearedByL3` is set by the offscreen L3 pass once OCR over the region has
+   * run and found no PII, so the common case (a chart) is not permanently
+   * blacked out.
+   */
+  if (el.tag === 'canvas') {
+    if (el.clearedByL3) return none
+    return {
+      cls: 'OPAQUE_REGION',
+      isPassword: false,
+      reason: 'canvas contents are not inspectable by the DOM channel; fail-closed until L3 clears it',
+      looksLikeIdentityImage: false,
+    }
+  }
+
+  /**
+   * §5 hard case: a frame we cannot read is redacted whole.
+   *
+   * `all_frames: true` means our content script normally runs inside
+   * same-origin frames too and reports its own detections there. A frame that
+   * refuses injection — cross-origin, or CSP-blocked — is a region we can see
+   * pixels for and have no way to redact selectively, so the fail-closed answer
+   * is to erase it. `embed` and `object` are included because they can host a
+   * plugin document with no `contentDocument` to read at all.
+   *
+   * This used to be a boolean (`crossOriginSuspect`) that nothing downstream
+   * read, so the frame was detected and then sent anyway. The flag is now a
+   * detection with a box, and the gate aborts if it is left uncovered.
+   */
+  if (el.tag === 'iframe' || el.tag === 'frame' || el.tag === 'embed' || el.tag === 'object') {
+    if (el.clearedByL3) return none
+    return {
+      cls: 'OPAQUE_REGION',
+      isPassword: false,
+      reason: 'frame refuses inspection; redacted wholesale per §5 fail-closed',
+      looksLikeIdentityImage: false,
+    }
   }
 
   // Password: independent signals, any one is sufficient. Checked before the
@@ -340,7 +411,12 @@ export function classifySemantics(el: ElementLike): SemanticVerdict {
   if (el.autocomplete && SENSITIVE_AUTOCOMPLETE.has(norm(el.autocomplete))) {
     const ac = norm(el.autocomplete)
     if (ac.includes('cc-')) return { cls: 'CREDIT_CARD', isPassword: false, reason: `autocomplete="${ac}"`, looksLikeIdentityImage: false }
-    if (ac.startsWith('billing')) return { cls: 'ADDRESS', isPassword: false, reason: `autocomplete="${ac}"`, looksLikeIdentityImage: false }
+    // Any address autocomplete, not just `billing`. This handled only the
+    // billing prefix, so `autocomplete="shipping street-address"` fell through
+    // to the generic PERSON branch and the value shipped unredacted.
+    if (/(^| )(billing|shipping|street|address|locality|region|postal|country)/.test(ac)) {
+      return { cls: 'ADDRESS', isPassword: false, reason: `autocomplete="${ac}"`, looksLikeIdentityImage: false }
+    }
     return { cls: 'PERSON', isPassword: false, reason: `autocomplete="${ac}"`, looksLikeIdentityImage: false }
   }
 
@@ -503,6 +579,30 @@ const RULES: Rule[] = [
     cls: 'MONEY',
     re: /(?:₹|rs\.?|inr|usd|\$|€|£)\s?\d[\d,]*(?:\.\d{1,2})?/gi,
     score: 0.55,
+  },
+  {
+    /**
+     * A postal address in running prose.
+     *
+     * §5 requires ADDRESS to be findable in text, not only via the
+     * `autocomplete` attribute. Without this, "Permanent address: 330, FC Road,
+     * Chennai 600002" survived into the payload: the L0 attribute path
+     * classified the *input*, but the same value repeated in the summary
+     * paragraph had no rule at all. Measured as 2 residual leaks.
+     *
+     * Kept deliberately narrow — a house number, a comma, a street word and a
+     * 6-digit PIN is a strong signal, and requiring all four keeps ordinary
+     * prose ("version 2, section 4, page 100002") from being redacted.
+     *
+     * An earlier draft added a second rule matching a bare 6-digit PIN. It
+     * measured ADDRESS precision 0.08 (tp=2, fp=22) — any order number, price
+     * and timestamp in the corpus matched it. The street-word anchor is what
+     * makes a postal address distinguishable from a number, so that rule is
+     * gone rather than kept at a lower score.
+     */
+    cls: 'ADDRESS',
+    re: /\b\d{1,4}\s*,\s*[A-Za-z][A-Za-z.'-]*(?:\s+[A-Za-z][A-Za-z.'-]*){0,4}\s*(?:road|rd\.?|street|st\.?|avenue|ave\.?|lane|ln\.?|drive|dr\.?|nagar|colony|boulevard|blvd\.?|park|square|cross)\b\.?[^.\n]{0,40}?\b\d{6}\b/gi,
+    score: 0.8,
   },
 ]
 

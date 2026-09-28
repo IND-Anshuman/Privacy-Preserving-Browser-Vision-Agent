@@ -6,7 +6,7 @@
   "split": "synthetic",
   "adversarial_kind": 3,
   "html": "form_13.html",
-  "sha256": "6c77b6ec9e24e5d8c825e5b4f62a00cb0d9ca40bb23b67efb2315fa9a30a0983",
+  "sha256": "74f2848119b708bdaa672d0a269cacc7dab1fd5fc46102d537cb031fa7210c73",
   "notes": "category=ecommerce; adversarial=3",
   "instances": [
     {
@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f13_summary_address",
+      "cls": "ADDRESS",
+      "value": "81, Gariahat Road, Chennai 600002",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        91,
+        124
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f13_address1",
       "cls": "ADDRESS",
       "value": "81, Gariahat Road, Chennai 600002",
@@ -147,7 +162,7 @@
     {
       "id": "f13_card_number",
       "cls": "CREDIT_CARD",
-      "value": "5425979311126008",
+      "value": "5425837541277795",
       "channel": "dom",
       "node_id": "card_number",
       "selector": "#card_number",

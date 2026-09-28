@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f05_summary_address",
+      "cls": "ADDRESS",
+      "value": "312, Linking Road, Chennai 600002",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        95,
+        128
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f05_msisdn",
       "cls": "PHONE",
       "value": "6724149412",

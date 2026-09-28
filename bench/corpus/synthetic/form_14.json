@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f14_summary_address",
+      "cls": "ADDRESS",
+      "value": "310, Park Street, Mumbai 400050",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        101,
+        132
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f14_patient_id",
       "cls": "BANK_ACCOUNT",
       "value": "PT400028",

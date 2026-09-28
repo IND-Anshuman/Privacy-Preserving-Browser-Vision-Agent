@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f15_summary_address",
+      "cls": "ADDRESS",
+      "value": "3, Park Street, Delhi 110001",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        97,
+        125
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f15_msisdn",
       "cls": "PHONE",
       "value": "6974308128",

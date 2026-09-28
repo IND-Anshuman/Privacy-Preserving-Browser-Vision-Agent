@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f16_summary_address",
+      "cls": "ADDRESS",
+      "value": "296, Linking Road, Chennai 600002",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        95,
+        128
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f16_student_id",
       "cls": "BANK_ACCOUNT",
       "value": "STU84527",

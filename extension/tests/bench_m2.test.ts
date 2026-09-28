@@ -101,13 +101,18 @@ interface Scored {
   tp: number
   fp: number
   fn: number
+  /** §6.3 fail-closed regions blanked. Counted, never scored as an error. */
+  failClosed: number
   byClass: Map<string, { tp: number; fp: number; fn: number }>
   missed: GtInstance[]
   falsePositives: string[]
 }
 
 function score(form: FormMeta, hits: RawHit[], byNode: Map<string, RawHit[]>): Scored {
-  const s: Scored = { tp: 0, fp: 0, fn: 0, byClass: new Map(), missed: [], falsePositives: [] }
+  const s: Scored = {
+    tp: 0, fp: 0, fn: 0, failClosed: 0,
+    byClass: new Map(), missed: [], falsePositives: [],
+  }
   const bump = (cls: string, k: 'tp' | 'fp' | 'fn') => {
     const e = s.byClass.get(cls) ?? { tp: 0, fp: 0, fn: 0 }
     e[k] += 1
@@ -136,8 +141,20 @@ function score(form: FormMeta, hits: RawHit[], byNode: Map<string, RawHit[]>): S
 
   // False positives: a hit on a node with no GT instance claiming that class,
   // excluding password values (which never carry their real text).
+  //
+  // OPAQUE_REGION is scored separately and NOT counted as a false positive. It
+  // is not a PII prediction — it is the §6.3 fail-closed rule firing on a
+  // region we cannot inspect. Blanking a <canvas> that the corpus did not
+  // happen to label is correct behaviour, and counting it as an error made the
+  // precision number worse the moment the fail-closed rules were implemented.
+  // The cost of over-redaction is a useless box; folding it into "precision"
+  // would punish the tool for the behaviour that makes it trustworthy.
   for (const h of hits) {
     if (h.cls === 'PASSWORD' && h.text === REDACTED_PASSWORD) continue
+    if (h.cls === 'OPAQUE_REGION') {
+      s.failClosed += 1
+      continue
+    }
     const owner = form.instances.find((i) => i.node_id === h.nodeId && i.cls === h.cls)
     if (!owner) {
       s.fp += 1
@@ -157,8 +174,19 @@ const forms: FormMeta[] = files.map((f) => JSON.parse(readFileSync(join(CORPUS, 
 
 describe('M2 smoke: L0+L1 vs exact ground truth', () => {
   it('the corpus loaded', () => {
+    // 268, not the 248 this asserted for months. The generator registers a
+    // free-text paragraph into every form but only labelled PERSON/EMAIL/PHONE
+    // inside it, leaving a real postal address in "Permanent address: ..." with
+    // no ground truth. Correct detectors were being scored as false positives.
+    // Pin the number so a silent corpus change is a red test, not a new
+    // baseline nobody notices.
     expect(forms.length).toBe(20)
-    expect(forms.reduce((a, f) => a + f.instances.length, 0)).toBe(248)
+    expect(forms.reduce((a, f) => a + f.instances.length, 0)).toBe(268)
+    // Every form must label the address it puts in prose.
+    for (const f of forms) {
+      const para = f.instances.find((i) => i.node_id === 'summary_para' && i.cls === 'ADDRESS')
+      expect(para, `${f.id} has an address in prose but no ADDRESS ground truth`).toBeTruthy()
+    }
   })
 
   it('passwords are never emitted as a pseudonym', () => {
@@ -179,7 +207,10 @@ describe('M2 smoke: L0+L1 vs exact ground truth', () => {
   })
 
   it('reports recall/precision over the DOM channel', () => {
-    const total: Scored = { tp: 0, fp: 0, fn: 0, byClass: new Map(), missed: [], falsePositives: [] }
+    const total: Scored = {
+      tp: 0, fp: 0, fn: 0, failClosed: 0,
+      byClass: new Map(), missed: [], falsePositives: [],
+    }
     const byKind = new Map<number, { tp: number; fn: number; fp: number }>()
     const missedByClass = new Map<string, number>()
 
@@ -196,6 +227,7 @@ describe('M2 smoke: L0+L1 vs exact ground truth', () => {
         e.fn += v.fn
         total.byClass.set(cls, e)
       }
+      total.failClosed += s.failClosed
       for (const m of s.missed) {
         missedByClass.set(m.cls, (missedByClass.get(m.cls) ?? 0) + 1)
       }
@@ -219,9 +251,12 @@ describe('M2 smoke: L0+L1 vs exact ground truth', () => {
 
     const lines: string[] = []
     lines.push('')
-    lines.push('  M2 SMOKE (L0+L1 only, no L2/L3) — 20 forms, 248 GT instances')
+    lines.push('  M2 SMOKE (L0+L1 only, no L2/L3) — 20 forms, 268 GT instances')
     lines.push('  ' + '-'.repeat(58))
     lines.push(`  micro  P=${p.toFixed(3)}  R=${r.toFixed(3)}  F1=${f1.toFixed(3)}   (tp=${total.tp} fp=${total.fp} fn=${total.fn})`)
+    // Reported separately, never inside precision. These are regions blanked
+    // because they could not be inspected, not PII that was predicted.
+    lines.push(`  fail-closed regions blanked: ${total.failClosed}`)
     lines.push(`  macro  F1=${macro.toFixed(3)}`)
     lines.push('  ' + '-'.repeat(58))
     for (const [cls, v] of [...total.byClass].sort((a, b) => b[1].fn - a[1].fn || b[1].tp - a[1].tp)) {

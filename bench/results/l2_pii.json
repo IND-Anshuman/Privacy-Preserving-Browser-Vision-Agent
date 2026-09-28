@@ -1,0 +1,149 @@
+{
+  "measured": true,
+  "model": "onnx-community/bert-small-pii-detection-ONNX",
+  "dtype": "q8",
+  "device": "cpu",
+  "load_ms": 192,
+  "texts": 790,
+  "inference_ms": 3244,
+  "ms_per_text": 4.1,
+  "spans": 1185,
+  "micro": {
+    "precision": 0.119,
+    "recall": 0.5685,
+    "f1": 0.1968,
+    "tp": 141,
+    "fp": 1044,
+    "fn": 107
+  },
+  "per_class": {
+    "PERSON": {
+      "tp": 54,
+      "fp": 374,
+      "fn": 0
+    },
+    "EMAIL": {
+      "tp": 44,
+      "fp": 51,
+      "fn": 4
+    },
+    "PHONE": {
+      "tp": 41,
+      "fp": 199,
+      "fn": 15
+    },
+    "DOB": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 20
+    },
+    "PASSWORD": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 10
+    },
+    "AADHAAR": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 10
+    },
+    "PAN": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "CREDIT_CARD": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 8
+    },
+    "IFSC": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "BANK_ACCOUNT": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 10
+    },
+    "GSTIN": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "ADDRESS": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "FACE": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "API_KEY": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "MONEY": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "ORG": {
+      "tp": 2,
+      "fp": 79,
+      "fn": 0
+    },
+    "PASSPORT": {
+      "tp": 0,
+      "fp": 1,
+      "fn": 2
+    },
+    "DL": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "IP_ADDRESS": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "LOCATION": {
+      "tp": 0,
+      "fp": 337,
+      "fn": 0
+    },
+    "DATE": {
+      "tp": 0,
+      "fp": 3,
+      "fn": 0
+    }
+  },
+  "covered_classes": [
+    "PERSON",
+    "EMAIL",
+    "PHONE",
+    "ORG",
+    "PASSPORT"
+  ],
+  "uncovered_classes": [
+    "DOB",
+    "PASSWORD",
+    "AADHAAR",
+    "PAN",
+    "CREDIT_CARD",
+    "IFSC",
+    "BANK_ACCOUNT",
+    "GSTIN",
+    "ADDRESS",
+    "FACE",
+    "API_KEY",
+    "MONEY",
+    "DL",
+    "IP_ADDRESS"
+  ]
+}

@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f09_summary_address",
+      "cls": "ADDRESS",
+      "value": "113,  Brigade Road, Mumbai 400050",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        99,
+        132
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f09_consignor_aadhaar",
       "cls": "AADHAAR",
       "value": "241487978451",

@@ -100,6 +100,16 @@ export interface TileRect {
   th: number
   /** Fraction of pixels that changed, 0..1. */
   change: number
+  /**
+   * The grid this rect indexes, as [cols, rows] of the 64×64 luma thumbnail.
+   *
+   * Carried on the rect rather than imported as a constant because the grid is
+   * a per-call option (`evaluateGate({cols, rows})`, default 4×4). A consumer
+   * that assumed a fixed grid would place every crop in the wrong place — and
+   * it would look plausible, because the tile still contained pixels.
+   */
+  cols: number
+  rows: number
 }
 
 const TILE_CHANGE_THRESHOLD = 0.02
@@ -130,7 +140,7 @@ export function dirtyTiles(
         }
       }
       const frac = total > 0 ? changed / total : 0
-      if (frac > threshold) out.push({ tx, ty, tw: 1, th: 1, change: frac })
+      if (frac > threshold) out.push({ tx, ty, tw: 1, th: 1, change: frac, cols, rows })
     }
   }
   void perTile
@@ -182,7 +192,9 @@ export function coalesceTiles(tiles: TileRect[]): TileRect[] {
         if (t) change = Math.max(change, t.change)
       }
     }
-    out.push({ tx: seed.tx, ty: seed.ty, tw, th, change })
+    // cols/rows come from the seed tile itself, so a caller that used a
+    // non-default grid gets correct coordinates back out of the coalescer.
+    out.push({ tx: seed.tx, ty: seed.ty, tw, th, change, cols: seed.cols, rows: seed.rows })
   }
   return out
 }

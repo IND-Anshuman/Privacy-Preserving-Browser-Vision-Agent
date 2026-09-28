@@ -123,10 +123,10 @@ describe('dirty tiles', () => {
 
   it('coalesces a 2x2 block into one tile', () => {
     const tiles: TileRect[] = [
-      { tx: 1, ty: 1, tw: 1, th: 1, change: 0.5 },
-      { tx: 2, ty: 1, tw: 1, th: 1, change: 0.6 },
-      { tx: 1, ty: 2, tw: 1, th: 1, change: 0.4 },
-      { tx: 2, ty: 2, tw: 1, th: 1, change: 0.55 },
+      { tx: 1, ty: 1, tw: 1, th: 1, change: 0.5, cols: 4, rows: 4 },
+      { tx: 2, ty: 1, tw: 1, th: 1, change: 0.6, cols: 4, rows: 4 },
+      { tx: 1, ty: 2, tw: 1, th: 1, change: 0.4, cols: 4, rows: 4 },
+      { tx: 2, ty: 2, tw: 1, th: 1, change: 0.55, cols: 4, rows: 4 },
     ]
     const c = coalesceTiles(tiles)
     expect(c).toHaveLength(1)
@@ -135,10 +135,45 @@ describe('dirty tiles', () => {
 
   it('keeps separated tiles separate', () => {
     const c = coalesceTiles([
-      { tx: 0, ty: 0, tw: 1, th: 1, change: 0.5 },
-      { tx: 3, ty: 3, tw: 1, th: 1, change: 0.5 },
+      { tx: 0, ty: 0, tw: 1, th: 1, change: 0.5, cols: 4, rows: 4 },
+      { tx: 3, ty: 3, tw: 1, th: 1, change: 0.5, cols: 4, rows: 4 },
     ])
     expect(c).toHaveLength(2)
+  })
+
+  it('carries the grid through the coalescer', () => {
+    // A consumer that assumed a fixed 4×4 grid would place every crop in the
+    // wrong place on a differently-configured gate, and the tile would still
+    // contain plausible pixels — so the grid travels with the rect.
+    const c = coalesceTiles([
+      { tx: 0, ty: 0, tw: 1, th: 1, change: 0.5, cols: 8, rows: 8 },
+      { tx: 1, ty: 0, tw: 1, th: 1, change: 0.6, cols: 8, rows: 8 },
+    ])
+    expect(c).toHaveLength(1)
+    expect(c[0]).toMatchObject({ cols: 8, rows: 8, tw: 2 })
+  })
+
+  it('stamps the grid it was computed with onto every tile', () => {
+    // Two constraints to respect, both easy to get wrong in a test fixture:
+    //   - a tile must change by more than 6 luma levels, so values are 0/255
+    //     rather than 0/1;
+    //   - the changed area must exceed 2% of the tile, so it is a solid block
+    //     rather than scattered pixels. A sparse array is correctly ignored.
+    const prev = new Float32Array(64 * 64)
+    const next = new Float32Array(64 * 64)
+    for (let y = 0; y < 16; y++) {
+      for (let x = 0; x < 16; x++) next[y * 64 + x] = 255
+    }
+    const tiles = dirtyTiles(prev, next, 8, 4)
+    expect(tiles.length).toBeGreaterThan(0)
+    for (const t of tiles) {
+      expect(t.cols).toBe(8)
+      expect(t.rows).toBe(4)
+    }
+    // The change is in the top-left of an 8×4 grid, so the coordinates a
+    // consumer maps back are the ones we expect.
+    expect(tiles[0]!.tx).toBeLessThan(4)
+    expect(tiles[0]!.ty).toBe(0)
   })
 })
 

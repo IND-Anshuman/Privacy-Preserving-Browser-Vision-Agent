@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f07_summary_address",
+      "cls": "ADDRESS",
+      "value": "171, Park Street, Chennai 600002",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        95,
+        127
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f07_passenger_name",
       "cls": "PERSON",
       "value": "Rohit Patel",

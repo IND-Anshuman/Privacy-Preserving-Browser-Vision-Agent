@@ -1,0 +1,350 @@
+window.__VEIL_METRICS__ = {
+  "schema_version": "1.0.0",
+  "generated_at": "2026-09-27T18:40:29.425740+00:00",
+  "corpus": {
+    "forms": 20,
+    "instances": 248
+  },
+  "M1_visual_context": {
+    "metric": "M1",
+    "provenance": "NOT MEASURED \u2014 requires the built extension loaded in a browser; run bench/index.html",
+    "task_count": 40,
+    "expected_action_histogram": {
+      "none": 16,
+      "fill": 3,
+      "click": 3,
+      "ask_user": 14,
+      "scroll": 1,
+      "hover": 1,
+      "extract": 1,
+      "wait_for": 1
+    },
+    "tier0_tasks": 7,
+    "destructive_tasks": 9,
+    "results": null,
+    "note": "40-task suite is defined and runnable; the success rate is not computed here because scoring it requires a real browser session."
+  },
+  "M2_pii_detection": {
+    "metric": "M2",
+    "provenance": "MEASURED \u2014 real detector over 20 synthetic forms with exact ground truth",
+    "micro": {
+      "precision": 0.9802,
+      "recall": 0.7984,
+      "f1": 0.88,
+      "tp": 198,
+      "fp": 4,
+      "fn": 50
+    },
+    "macro_f1": 0.7671,
+    "per_class": {
+      "AADHAAR": {
+        "precision": 0.8333,
+        "recall": 1.0,
+        "f1": 0.9091,
+        "tp": 10,
+        "fp": 2,
+        "fn": 0
+      },
+      "ADDRESS": {
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1": 0.5,
+        "tp": 2,
+        "fp": 2,
+        "fn": 2
+      },
+      "API_KEY": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 4,
+        "fp": 0,
+        "fn": 0
+      },
+      "BANK_ACCOUNT": {
+        "precision": 1.0,
+        "recall": 0.4,
+        "f1": 0.5714,
+        "tp": 4,
+        "fp": 0,
+        "fn": 6
+      },
+      "CREDIT_CARD": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 8,
+        "fp": 0,
+        "fn": 0
+      },
+      "DL": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "fp": 0,
+        "fn": 0
+      },
+      "DOB": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 20,
+        "fp": 0,
+        "fn": 0
+      },
+      "EMAIL": {
+        "precision": 1.0,
+        "recall": 0.9167,
+        "f1": 0.9565,
+        "tp": 44,
+        "fp": 0,
+        "fn": 4
+      },
+      "FACE": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 4,
+        "fp": 0,
+        "fn": 0
+      },
+      "GSTIN": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 4,
+        "fp": 0,
+        "fn": 0
+      },
+      "IFSC": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "fp": 0,
+        "fn": 0
+      },
+      "IP_ADDRESS": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 2
+      },
+      "MONEY": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 2
+      },
+      "ORG": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 2
+      },
+      "PAN": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 4,
+        "fp": 0,
+        "fn": 0
+      },
+      "PASSPORT": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "fp": 0,
+        "fn": 0
+      },
+      "PASSWORD": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 10,
+        "fp": 0,
+        "fn": 0
+      },
+      "PERSON": {
+        "precision": 1.0,
+        "recall": 0.5556,
+        "f1": 0.7143,
+        "tp": 30,
+        "fp": 0,
+        "fn": 24
+      },
+      "PHONE": {
+        "precision": 1.0,
+        "recall": 0.8571,
+        "f1": 0.9231,
+        "tp": 48,
+        "fp": 0,
+        "fn": 8
+      }
+    },
+    "by_channel": {
+      "dom": {
+        "tp": 190,
+        "fn": 34,
+        "fp": 0
+      },
+      "pixels": {
+        "tp": 4,
+        "fn": 12,
+        "fp": 0
+      },
+      "attribute": {
+        "tp": 4,
+        "fn": 0,
+        "fp": 0
+      },
+      "shadow": {
+        "tp": 0,
+        "fn": 4,
+        "fp": 0
+      }
+    },
+    "missed_by_class": {
+      "PERSON": 24,
+      "PHONE": 8,
+      "BANK_ACCOUNT": 6,
+      "EMAIL": 4,
+      "ADDRESS": 2,
+      "MONEY": 2,
+      "ORG": 2,
+      "IP_ADDRESS": 2
+    },
+    "note": "L0+L1 only. PERSON/ORG/MONEY recall is low BY DESIGN: regex cannot find names in prose. That gap is what L2 exists to close."
+  },
+  "M3_redaction_precision": {
+    "metric": "M3",
+    "provenance": "NOT MEASURED \u2014 requires the redaction output rendered by a real browser",
+    "box_iou": null,
+    "leakage_rate": null,
+    "method": "OCR the redacted WebP, check whether any ground-truth PII string is still recoverable",
+    "note": "This is the metric nobody reports, and the one that cannot be faked: drawing boxes is easy, making the text unrecoverable is not. Target is 0.00."
+  },
+  "M4_client_resources": {
+    "metric": "M4",
+    "provenance": "MEASURED \u2014 extension/bench/measure_client_cpu.ts over the real corpus",
+    "measured": {
+      "l01_per_form_ms": {
+        "mean": 18.248305000000002,
+        "p50": 17.942695000000004,
+        "p95": 19.358655,
+        "min": 17.373955000000024,
+        "max": 19.874950000000034
+      },
+      "frame_diff_2cycles_ms": {
+        "mean": 29.016012000000117,
+        "p50": 27.94840000000113,
+        "p95": 37.68840000000091,
+        "min": 24.112699999999677,
+        "max": 38.787500000000364
+      },
+      "pseudonym_ms": {
+        "mean": 0.025263999999951922,
+        "p50": 0.019700000000739237,
+        "p95": 0.04709999999977299,
+        "min": 0.019099999999525608,
+        "max": 0.09230000000025029
+      }
+    },
+    "projected_by_device": {
+      "this-machine": {
+        "factor": 1,
+        "l01_per_form_ms": {
+          "mean": 18.248,
+          "p50": 17.943,
+          "p95": 19.359
+        },
+        "frame_diff_2cycles_ms": {
+          "mean": 29.016,
+          "p50": 27.948,
+          "p95": 37.688
+        }
+      },
+      "modern-laptop": {
+        "factor": 1.8,
+        "l01_per_form_ms": {
+          "mean": 32.847,
+          "p50": 32.297,
+          "p95": 34.846
+        },
+        "frame_diff_2cycles_ms": {
+          "mean": 52.229,
+          "p50": 50.307,
+          "p95": 67.839
+        }
+      },
+      "old-laptop": {
+        "factor": 4.5,
+        "l01_per_form_ms": {
+          "mean": 82.117,
+          "p50": 80.742,
+          "p95": 87.114
+        },
+        "frame_diff_2cycles_ms": {
+          "mean": 130.572,
+          "p50": 125.768,
+          "p95": 169.598
+        }
+      },
+      "integrated": {
+        "factor": 2.5,
+        "l01_per_form_ms": {
+          "mean": 45.621,
+          "p50": 44.857,
+          "p95": 48.397
+        },
+        "frame_diff_2cycles_ms": {
+          "mean": 72.54,
+          "p50": 69.871,
+          "p95": 94.221
+        }
+      },
+      "chromebook": {
+        "factor": 3.5,
+        "l01_per_form_ms": {
+          "mean": 63.869,
+          "p50": 62.799,
+          "p95": 67.755
+        },
+        "frame_diff_2cycles_ms": {
+          "mean": 101.556,
+          "p50": 97.819,
+          "p95": 131.909
+        }
+      }
+    },
+    "peak_heap_mb": null,
+    "idle_cpu_pct": null,
+    "bytes_downloaded": null,
+    "not_measured": [
+      "L2/L3 inference",
+      "WebGPU compositor",
+      "capture APIs",
+      "end_to_end_p50_p95",
+      "heap",
+      "bytes"
+    ],
+    "note": "CPU-side cost is measured. Heap, idle CPU and download bytes need a real browser session."
+  },
+  "M5_latency": {
+    "metric": "M5",
+    "provenance": "NOT MEASURED \u2014 requires the built extension and a running vLLM",
+    "p50_ms": null,
+    "p95_ms": null,
+    "waterfall": null,
+    "design_target": "capture 15ms | redact 40ms | upload 60ms | TTFT 350ms | stream 200ms | execute 30ms ~= 700ms p50",
+    "note": "The target above is from ARCHITECTURE.md \u00a78 and is a DESIGN TARGET, not a measurement. It is deliberately kept out of the results tables until measured."
+  }
+};

@@ -320,6 +320,11 @@ def build_form(idx: int, rng: random.Random) -> FormSpec:
         ("PERSON", person),
         ("EMAIL", email),
         ("PHONE", "+91 " + mobile[:5] + " " + mobile[5:]),
+        # ADDRESS was missing here, so every form carried a real postal address
+        # in prose that the detector correctly found and the benchmark scored as
+        # 18 false positives. The paragraph says "Permanent address: {addr}.",
+        # so the address is unambiguous ground truth and belongs in the set.
+        ("ADDRESS", addr),
     ]:
         start = para.find(val)
         if start >= 0:

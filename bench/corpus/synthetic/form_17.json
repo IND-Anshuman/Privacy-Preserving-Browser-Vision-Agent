@@ -115,6 +115,21 @@
       "note": "free-text span"
     },
     {
+      "id": "f17_summary_address",
+      "cls": "ADDRESS",
+      "value": "195, Gariahat Road, Bengaluru 560001",
+      "channel": "dom",
+      "node_id": "summary_para",
+      "selector": "#summary_para",
+      "span": [
+        97,
+        133
+      ],
+      "box": null,
+      "redaction_method": "placeholder",
+      "note": "free-text span"
+    },
+    {
       "id": "f17_passenger_name",
       "cls": "PERSON",
       "value": "Sneha Pillai",
