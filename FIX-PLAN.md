@@ -1,7 +1,59 @@
-# Refined plan — audit findings + the L2 correction
+# Fix plan — all five waves complete
 
-**Status: planning. L2 correction is already IMPLEMENTED and MEASURED below.
-Everything else is planned, not started.** No commits (standing instruction).
+**Status: DONE and verified. Every number below came from a run; see README.md
+for the tables and the honest failure notes.**
+
+| # | Finding | Status | Evidence |
+|---|---|---|---|
+| 0.1 | `frame_hash: 'pending'` failed schema on every T1 run | FIXED | real 16-hex fingerprint; the server rejects a missing one with 422 too |
+| 0.2 | the plan was parsed and dropped | FIXED | `executePlan()` in background.ts |
+| 1.1 | **raw PII shipped as `label`** | **FIXED** | **0/212 leaked, measured** |
+| 1.2 | boxes in document coords | FIXED | `rectOf` is viewport; `documentRectOf` kept for the DOM channel |
+| 1.3 | gate hashed a detection *count* | FIXED | hashes the redacted structural fingerprint |
+| 1.4 | `lowConf` predicate inverted | FIXED | gate now aborts only on what it never classified |
+| 1.5 | `marks: []` sent to the compositor | FIXED | marks ride on `snapshot:ready` |
+| 1.6 | uninspectable frames flagged, not redacted | FIXED | `OPAQUE_REGION`, redacted whole, gate aborts if uncovered |
+| 1.7 | canvas/video invisible to every rule | FIXED | both fail-closed until L3 clears them |
+| 1.8 | offscreen CSP too loose | FIXED | per-context, `connect-src 'self'` |
+| 2.3 | L2 was "disabled but still loaded 27 MB" | FIXED | gated by `admitL2` |
+| 2.4 | `lowConf`/gate inversion | FIXED | see 1.4 |
+| 2.5 | delta tiles unwired server-side | FIXED | cropped from the *redacted* canvas, re-composited server-side |
+| 3.1 | `content:confirm` was a no-op | FIXED | re-resolves the mark and clicks |
+| 3.7 | `valueClass` never `'public'` | FIXED | three-way now, and the server prompt can use it |
+| — | **server `pixel_derived` vs client `pixelDerived`** | **FIXED** | 422 on every real request; `bench/test_contract.py` now pins it |
+| — | **two L3 "models" were not models** | **FIXED** | yolov10n has no face class; `runL3Text` called the face detector |
+| — | shadow DOM not implemented at all | FIXED | open roots walked, sealed hosts fail closed |
+
+### Final measured state
+
+```
+extension   162 tests, tsc clean, chrome 188.13 kB, firefox 188.04 kB
+server      17/17 checks, 5/5 contract checks
+M2          P=0.982  R=0.799  F1=0.881   (268 GT instances, 20 forms)
+cascade     naive union F1 0.788 -> 0.164  (2,444 FP) — hence PERSON-only
+leakage     text 0/212 · box 6/212 uncovered (2.8%)
+M3          coverage 12/12 · leakage 0/12 · mean IoU 0.045 (by construction)
+L3 canvas   12/12 covered, 9.6 ms/canvas, real browser
+M5          client p50 17.94 ms · server floor p50 2.0 ms · T1 NOT MEASURED
+```
+
+### What the corrections cost and bought
+
+The L2 story reversed three times, and each reversal came from measuring:
+
+1. "The neural layer doesn't work" — true of `bert-base-NER`, false in general.
+   Checking the Hub found `bert-small-pii-detection-ONNX` (24 PII classes, 27 MB).
+2. "It works, so the cascade improves F1" — **false.** Measured: naive union drops
+   F1 from 0.788 to 0.164 with 2,444 false positives. The per-class policy is not
+   a compromise, it is the only defensible configuration.
+3. "The benchmark says L2 contributes nothing" — false, twice. The harness still
+   used the rejected model, and a bare `catch` swallowed an ONNX batch error.
+
+Every one of those looked like a *result*. None of them was.
+
+---
+
+## Original wave plan (superseded by the table above)
 
 ---
 

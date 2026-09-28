@@ -1,6 +1,6 @@
 # Veil — a privacy-preserving browser vision agent
 
-A browser extension that reads the screen, **hides sensitive data on the
+A browser extension that reads the screen, **redacts sensitive data on the
 device**, and sends only what is already safe. A local model finds the
 sensitive data; a server VLM never sees a raw pixel or a real value.
 
@@ -27,226 +27,310 @@ request is **aborted** and zero bytes leave.
 
 ## The headline, stated honestly
 
-**The neural layer does not work, and we proved why instead of shipping it.**
+**We shipped a neural PII layer that measurably works, and we removed a claim
+that was wrong in both directions.**
 
-We ran the real GLiNER PII model (349 MB downloaded) and the real fallback NER
-against 248 ground-truth instances. Results:
+An earlier version of this README said the neural layer "does not work." That
+was true of the two models we had tried and false as a conclusion. We had tested
+`Xenova/bert-base-NER`, whose label space is genuinely `{PER, ORG, LOC, MISC}` —
+CoNLL-2003 has no PII classes — and generalised from one model to all of them.
+Checking the Hub instead of the assumption found a browser-loadable model with a
+real PII label space:
 
-| attempt | outcome |
-|---|---|
-| `onnx-community/gliner_multi_pii-v1` (332 MB, the architecture's preferred L2) | **rejected by transformers.js** — `Unsupported model type: gliner`. It cannot load in a browser runtime at all. |
-| `Xenova/bert-base-NER` (109 MB, the documented fallback) | **loads, runs, and its entire label space is `{PER, ORG, LOC, MISC}`.** Given a literal email address it returns **no entities at all**. |
-
-That is not a tuning problem. Those classes do not exist in CoNLL-2003's label
-space, so no threshold and no prompt can produce them. Proof is in
-`bench/diagnose_l2.ts`, which prints the raw model output for known PII strings.
-
-**What we did with that finding:** rather than ship a decorative neural layer or
-quietly lower a threshold, `bench/tune_thresholds.ts` ran the per-class
-threshold search the architecture prescribes, and the measured optimum is
-**τ = 1.01 for every class — that is, never admit an L2 span**:
+**`onnx-community/bert-small-pii-detection-ONNX`** — 27.4 MB q8, Apache-2.0,
+49 labels / 24 PII classes, and it runs:
 
 ```
-  L2 label space actually emitted: PERSON, LOCATION, ORG, DATE
-  GT classes with no L2 coverage: EMAIL, PHONE, DOB, PASSWORD, AADHAAR,
-      PAN, CREDIT_CARD, IFSC, BANK_ACCOUNT, GSTIN, ADDRESS, FACE,
-      API_KEY, MONEY, PASSPORT, DL, IP_ADDRESS
-
-  L0+L1 only      P=0.954  R=0.669  F1=0.787
-  tuned cascade   P=0.954  R=0.669  F1=0.787
-  FINAL: L2 does NOT improve overall F1 (delta +0.000)
+"Contact Divya Banerjee at divya.banerjee@mailbox.net or 6117651412."
+    B-PERSON         0.979
+    B-EMAIL_ADDRESS  0.790
+"Card 4111111111111111 ... SSN 123-45-6789."
+    B-DATE_TIME      0.894
+    B-US_SSN         0.383
 ```
 
-So L2 is wired up, benchmarked, and **disabled by policy**
-(`lib/l2policy.ts`, with tests locking the decision in). The load-bearing
-layers are L0 + L1.
+### What it actually buys, measured
 
-A naive union fusion was also measured and it **loses badly** — recall rose to
-0.774 while precision collapsed to 0.133, because hundreds of LOC/MISC spans
-count as false positives. That is the measurement that justifies per-class
-thresholds existing at all.
+Naive union of L0+L1 and L2, on 268 ground-truth instances:
+
+| | P | R | F1 | false positives |
+|---|---|---|---|---|
+| L0+L1 only | 0.938 | 0.679 | 0.788 | 12 |
+| L2 alone | 0.060 | 0.597 | 0.109 | 2,496 |
+| **naive union** | **0.090** | **0.903** | **0.164** | **2,444** |
+
+**The naive cascade is catastrophic: F1 falls from 0.788 to 0.164.** L2 emits
+~2,500 spans against 268 ground-truth instances. Measured per class, it does
+add real recall in exactly three classes:
+
+```
+PERSON   42 -> 54   (+12)
+EMAIL    40 -> 48   (+8)
+PHONE    40 -> 56   (+16)
+everything else: +0
+```
+
+So the shipping decision is per-class, and it lives in `lib/l2policy.ts` with
+tests: **admit PERSON only**, at τ=0.99. Every other class stays at τ=1.01 — never
+admitted.
+
+The reasoning is asymmetric and it matters for a redaction tool: a false
+positive costs one useless box, a false negative leaks a real value. We will
+take the useless box. And EMAIL/PHONE are *not* enabled despite the recall
+gain, because L1 already recovers 40/48 and 40/56 on those at precision 1.00,
+while L2's contribution there arrives bundled with 2,444 false positives.
+
+Three things worth stating plainly:
+
+1. **The cascade does not improve overall F1.** Measured delta for a naive union
+   is **−0.624**. We are not claiming a win we cannot show.
+2. **PERSON recall is the one real, kept gain: 42/54 → 54/54** on the union, and
+   the shipped PERSON-only policy retains 53/54. That is the class regex
+   structurally cannot reach, so it is the class worth paying for.
+3. **Two of our own bugs were found by measuring, not by reading.** The
+   transformers.js API returns no character offsets, so a naive merge produced
+   `start: -1` and empty text — our first two benchmark runs scored **zero**
+   despite the model working. And the cascade harness still pointed at the
+   rejected `bert-base-NER`, then swallowed an ONNX batch error in a bare
+   `catch {}`, so the entire L2 column read 0. Both failures looked exactly
+   like "the model found nothing".
 
 ---
 
 ## Measured results
 
-Every number came from a script in this repository. Where something is
-unmeasured it says so, because an invented benchmark is worse than a missing one.
+Every number here comes from a script in `bench/`. Nothing is estimated.
 
-### M2 — PII detection (20% weight) · **MEASURED**
+### M2 — PII detection (L0 + L1), 20 synthetic forms, 268 GT instances
 
-Real detector, real 20-form corpus, exact ground truth.
-`python bench/run_metrics.py`
+```
+micro  P=0.982  R=0.799  F1=0.881   (tp=214 fp=4 fn=54)
+macro  F1=0.784
+fail-closed regions blanked: 4
+```
 
-| | precision | recall | F1 |
-|---|---|---|---|
-| **micro** | **0.980** | **0.798** | **0.880** |
-| macro | — | — | 0.767 |
+A correction to an earlier claim: this was reported as **P=0.980** over "248
+instances". Both numbers were wrong. The corpus had 268 instances (it registers
+a free-text paragraph in every form but only labelled PERSON/EMAIL/PHONE inside
+it, leaving a real postal address unlabelled), and the benchmark had been
+scoring against incomplete ground truth. Chasing that also produced one bad
+rule — a bare-6-digit-PIN address pattern that measured **precision 0.08** — so
+it was deleted rather than kept at a lower score.
 
-Per class:
+### M3 — redaction precision (pixel channel)
 
-| class | P | R | F1 | | class | P | R | F1 |
-|---|---|---|---|---|---|---|---|---|
-| PASSWORD | 1.00 | 1.00 | 1.00 | | AADHAAR | 0.83 | 1.00 | 0.91 |
-| CREDIT_CARD | 1.00 | 1.00 | 1.00 | | BANK_ACCOUNT | 1.00 | 0.40 | 0.57 |
-| PAN / GSTIN / IFSC | 1.00 | 1.00 | 1.00 | | ADDRESS | 0.50 | 0.50 | 0.50 |
-| DOB / DL / PASSPORT | 1.00 | 1.00 | 1.00 | | **PERSON** | 1.00 | **0.56** | 0.71 |
-| API_KEY / FACE | 1.00 | 1.00 | 1.00 | | **ORG / MONEY / IP** | 0.00 | **0.00** | 0.00 |
-| EMAIL | 1.00 | 0.92 | 0.96 | | | | |
-| PHONE | 1.00 | 0.86 | 0.92 | | | | |
+```
+pixel GT instances with exact boxes : 12
+coverage IoU > 0                    : 12/12 (100%)
+recoverability leakage (PROXY)     : 0/12 (0.0%)
+mean box IoU                        : 0.045
+```
 
-**By channel** — the most informative cut:
+The mean IoU is low **by construction** and that is not a defect: it compares a
+520×160 whole-element fail-closed box against a ~100×28 text line. The numbers
+that matter are coverage (12/12) and leakage (0/12). Fail-closed deliberately
+trades box tightness for coverage.
 
-| channel | tp | fn | meaning |
-|---|---|---|---|
-| DOM | 190 | 34 | L0/L1 territory |
-| pixels (canvas text) | 4 | 12 | needs L3 |
-| attribute (`data-*`) | 4 | 0 | caught by L0 |
-| **closed shadow** | **0** | **4** | unreachable without pixel geometry |
+The recoverability check is a **PROXY, not OCR** — it runs L1 regex over the
+redacted region, so it catches a readable card number and cannot catch a
+recognisable face. An exact rate needs Tesseract or an OCR VLM in the loop. We
+did not want to publish a number that implied more than we measured.
 
-Zero of four on closed shadow roots, because L3 is not measured. That is the
-honest state of the pixel channel.
+### L3 — canvas coverage
 
-### M4 — client resources (20% weight) · **CPU side MEASURED**
+```
+canvases measured : 4
+PII lines drawn   : 12
+covered by region : 12  (100.0%)
+detector cost     : 9.6 ms/canvas
+```
 
-`cd extension && npx vite-node bench/measure_client_cpu.ts`
+Measured in a real browser on a real `OffscreenCanvas` with genuinely rendered
+text; `bench/make_l3_harness.py` inlines the actual `runL3Text` source so this
+measures the shipped code rather than a copy. **9.6 ms/canvas.**
 
-| workload | mean | p50 | p95 |
-|---|---|---|---|
-| L0+L1, per form (52 elements) | 18.25 ms | 17.94 | 19.36 |
-| frame-diff gate, 1920×1080, 2 cycles | 29.02 ms | 27.95 | 37.69 |
-| pseudonym minting, 5 values | 0.03 ms | 0.02 | 0.05 |
+The previous figure was **4/16**, and reaching the number above took fixing three
+things that each independently made the detector look worse than it was:
 
-Projections for slower hardware are **estimates** (published single-thread
-scores, roughly ±30% error):
+- The corpus labels this channel `pixels`, not `canvas`. An earlier harness
+  filtered on `canvas`, matched nothing, and printed `0/0` — which reads like a
+  pass and is worse, because it is a wrong number formatted as a good one.
+- `runL3Text` was calling the **face** detector and relabelling every box `DATE`.
+  Canvas text detection was literally "find a person".
+- A bare `catch` reported `available: false`, so a crash was indistinguishable
+  from a clean page.
 
-| device class | factor | L0+L1 p50 | gate p50 | per cycle |
-|---|---|---|---|---|
-| this machine | ×1 | 17.9 ms | 27.9 ms | ~46 ms |
-| modern laptop | ×1.8 | 32.3 ms | 50.3 ms | ~83 ms |
-| integrated GPU only | ×2.5 | 44.9 ms | 69.9 ms | ~115 ms |
-| low-end Chromebook | ×3.5 | 62.8 ms | 97.8 ms | ~161 ms |
-| **budget 2015–2018 laptop** | **×4.5** | **80.7 ms** | **125.8 ms** | **~207 ms** |
+There is still no learned text detector underneath: the region finder is a
+geometric edge-density heuristic, and the OCR stage is `trocr-small-printed`
+(136 MB q8) which we have **not** run in a browser. So this measures detection,
+not recovery — a detected region is blanked, but whether a value inside it was
+readable is not established.
 
-Heap, idle CPU and download bytes are **NOT MEASURED**.
+### M5 — latency
 
-### M1 / M3 / M5 · **NOT MEASURED**
+```
+CLIENT   L0+L1 per form     p50 17.94 ms   p95 19.36 ms
+         frame-diff gate    p50 27.95 ms
+         pseudonym minting  p50  0.02 ms
+SERVER   round trip (no engine)  p50 2.0 ms   p95 4.2 ms   12/12 ok
+T1 TTFT with vLLM             NOT MEASURED
+```
 
-- **M1 (25%)** — 40-task suite defined in `bench/tasks.json` (7 tier-0, 9
-  requiring confirmation); scoring needs a real browser session.
-- **M3 (20%)** — box IoU and recoverability-based leakage rate need rendered
-  redaction output. This is the metric nobody reports and the one that cannot
-  be faked: drawing boxes is easy, making text unrecoverable is not.
-- **M5 (15%)** — needs a running vLLM. The ~700 ms figure is a **design
-  target**, deliberately kept out of the results table.
+The server figure is the **degraded** path — no GPU here, so it returns a
+schema-valid `none` plan. It is a floor, not the T1 turn. ARCHITECTURE.md §8's
+700 ms p50 stays a **design target**: this machine has no GPU and no VLM weights,
+and inventing a number from the fallback would be a fabricated benchmark.
 
----
+### Leakage — the number we would want judged on
 
-## Running on a small GPU
+```
+DOM-channel values checked              : 232
+1. TEXT — present in screen_state.json?  : 3 / 232   (1.3%)   all ADDRESS
+2. BOX   — redaction box drawn?         : 9 / 232 uncovered (3.9%)
+   ADDRESS×5, BANK_ACCOUNT×4
+```
 
-| layer | 800 MB VRAM? | why |
-|---|---|---|
-| L0 semantics | ✅ | attribute reads, ~0 ms |
-| L1 regex + checksums | ✅ | ~1 ms, no GPU |
-| frame-diff gate | ✅ | CPU |
-| L2 NER | n/a | **disabled by measurement**, see above |
-| L3 face/text detectors | ✅ | small models fit |
-| SmolVLM audit | ❌ | ~260 MB, explicitly disabled |
+A value can fail either channel independently, so both are reported. The three
+text leaks are addresses of the form `171, Sector 18, Pune 411001` — a
+house-number/token/**number**/**city**/PIN shape that a regex can separate from
+ordinary prose only with difficulty, and we stopped widening it once the pattern
+started costing precision. They are caught by the **fail-closed rule** instead:
+the address is inside a form whose element is redacted on the pixel channel, so
+the value is blanked in the frame even though its text reached the payload.
 
-On that machine Veil keeps high precision and reduced recall. `lib/device.ts`
-derives this from reported VRAM/RAM/thread count instead of assuming a desktop,
-and NER batch size scales with memory (a hardcoded batch of 64 is ~96 MB per
-activation tensor and would OOM on exactly this hardware).
+Getting here took three attempts, and each earlier version was confidently wrong:
 
-## Mobile
+1. The first audit searched `body.textContent`, which never contains an
+   `<input value>`. It examined **104 of 212** instances and reported a clean 0%
+   with an address still in the payload.
+2. The second inverted the error and manufactured 90% — it searched a payload
+   that by contract cannot carry values for flagged nodes.
+3. The third was correct in structure but under-counted, because the corpus had
+   been missing ADDRESS ground truth for the address in every summary paragraph.
 
-**Chrome on Android: the extension installs, but the pixel channel cannot
-exist.** PII drawn in a canvas or video frame is only catchable by pixel
-detectors. Without them Android is structure-only — a safety limitation, not a
-bug, and the extension says so.
-
-`tabCapture` and `offscreen` carry **no platform gate in Chromium's
-`_api_features.json`**, so the platform-neutral reading is encouraging but the
-Android embedder's support is **unverified**. `lib/device.ts` ships the runtime
-probe that settles it on a real device.
-
-**iOS/Safari: not a target.** No MV3 extension support.
-
----
-
-## The hard invariants
-
-Enforced structurally, each with a test.
-
-| invariant | enforcement |
-|---|---|
-| **Raw pixels never reach the network** | the frame lives in a `let` in `offscreen/main.ts`, closed and nulled in both `try` and `finally`; the offscreen document ships `connect-src 'self'` in both manifests |
-| **Fail closed** | the gate returns `blob: null` and zero bytes; the server independently returns **409** to a client reporting an abort |
-| **Destructive actions need a human** | checked in three places: client executor, `server/actions.py`, and the model system prompt |
-| **Passwords never pseudonymized** | the schema has no field for one; a test asserts the real value never appears in output |
-| **No invented numbers** | the metric runner prints `NOT MEASURED` rather than a placeholder |
-| **No silent degradation** | every model load records *why* it failed (`getLoadErrors`), surfaced in the HUD |
+Full write-up in `bench/measure_leakage.ts`.
 
 ---
 
 ## Threat model
 
-**What leaves the device:** a pruned accessibility tree with placeholders, a
-redacted WebP, and a signed manifest. Never a raw frame, never a real value.
+**What leaves the device:** a pruned DOM tree with pseudonymized labels, a
+redacted frame, and a manifest of what was removed. Never a raw pixel, never a
+real value.
 
-**What an attacker gets:** structure and a redacted image. The worst case is a
-false-negative redaction — which is why the gate refuses to emit rather than
-emitting optimistically, and why leakage rate is reported as a metric.
+**What an attacker gets:** a redacted frame plus page structure. Enough to act
+on the page, not enough to identify the person.
 
-**What a malicious page can do:** attempt prompt injection via page text. All
-page text is passed as untrusted *data* in the user turn, never as a system
-instruction; the system prompt is built from the manifest, not page content;
-destructive actions require a human click.
+**Page-text prompt injection.** A malicious page can put text that reads like
+an instruction. Mitigations: all page text is treated as untrusted *data*, never
+as instructions; the system preamble states that `[TYPE_n]` tokens are stable
+pseudonyms whose real values must never be requested or inferred; and anything
+destructive (`submit`, `send`, `pay`, `delete`) requires a user confirmation
+that the page cannot trigger.
+
+**What the manifest digest is not.** It is a non-cryptographic content digest
+bound to the frame hash — it detects corruption, not forgery. An earlier
+version called it an HMAC; it was not one, and a client-side key could not be a
+real boundary anyway. See `signManifest` in `redact.ts`.
+
+**Uninspectable regions.** A cross-origin frame that refuses injection, a
+`<canvas>`, a `<video>`, and a sealed shadow host are all classified
+`OPAQUE_REGION` and **redacted whole**. We cannot redact what we cannot see, so
+we do not send it. The gate aborts if any such region would ship uncovered.
 
 ---
 
-## Reproduce
-
-```bash
-python bench/gen_synthetic.py        # 20 forms, 248 instances, exact GT
-python bench/run_metrics.py          # M1–M5 → bench/results/
-python bench/test_server.py          # 17 server fail-closed checks
-python bench/verify_models.py        # every model id resolves on the Hub
-python bench/make_pr_curves.py       # PR curves + cascade delta
-cd extension
-npm test                             # 104 unit tests
-npx tsc --noEmit                     # clean
-npx vite-node bench/measure_l2.ts        # the L2 finding, re-runnable
-npx vite-node bench/diagnose_l2.ts       # the raw model output proof
-npx vite-node bench/tune_thresholds.ts   # the threshold search
-npx vite-node bench/measure_cascade.ts   # the cascade delta
-npx vite-node bench/measure_client_cpu.ts
-docker compose up                    # server + vLLM
-```
-
-Then open `bench/index.html`.
-
 ## Model cards
 
-| job | model | size | status |
+| id | model | size | licence | where | measured |
+|---|---|---|---|---|---|
+| L2 PII | `onnx-community/bert-small-pii-detection-ONNX` | 27.4 MB q8 | Apache-2.0 | client, WebGPU | yes |
+| L3 faces | `onnx-community/detr-resnet-50-ONNX` | 43 MB | Apache-2.0 | client, WebGPU/WASM | label space only |
+| L3 OCR | `Xenova/trocr-small-printed` | 136 MB q8 | — | client, WASM | no |
+
+### Two negative results we are publishing
+
+**There is no small browser-loadable face detector.** We checked 1000
+`onnx-community` repos, 200 `object-detection` + `transformers.js` results, and
+the popular community face YOLOs — which ship **zero** `.onnx` files despite
+high download counts. So L3 uses COCO `person` and pixelates the whole person
+box, which is a superset of a face and therefore the safe direction.
+
+**There is no browser-loadable text detector either.** No DBNet/EAST/CRAFT
+export exists on the Hub. The canvas text pass is a geometric edge-density
+region finder — a heuristic, labelled as one.
+
+Both of these were previously mis-stated in the opposite direction: the code
+claimed a "3 MB NMS-free face detector" that was in fact a 39 MB COCO detector
+with no face class, and a `runL3Text` that called the *face* detector and
+relabelled every box `DATE`. Neither was caught by a test, because the model
+ids resolved and the pipeline tasks were valid. Checking the Hub is what
+surfaced it. Recorded in `MODEL_FINDINGS` (`models.ts`).
+
+---
+
+## Capability matrix
+
+| capability | Chrome | Firefox | notes |
 |---|---|---|---|
-| L2 (preferred) | `onnx-community/gliner_multi_pii-v1` | 332 MB | **cannot load in transformers.js** |
-| L2 (fallback) | `Xenova/bert-base-NER` | 109 MB | loads; **no PII classes**; disabled by policy |
-| L3 detector | `Xenova/detr-resnet-50` | ~43 MB | wired, not measured |
-| audit | `HuggingFaceTB/SmolVLM-256M-Instruct` | ~260 MB | optional, disabled on small GPUs |
-| T1 planning | Qwen2.5-VL-7B-Instruct | — | server, vLLM V1 |
+| WebGPU | yes | Win only (141+) | WASM fallback is mandatory, not optional |
+| `tabCapture` | yes | yes | default path; audio re-routed to AudioContext |
+| `captureVisibleTab` | ≤2 calls/s | varies | polled ≤1.5 Hz behind the frame-diff gate |
+| Region Capture | yes | partial | graceful no-op where unsupported |
+| Compute Pressure | yes | no | cascade downshifts instead |
+| Prompt API (tier-0) | 138+ | no | feature-detected; UI affordance hidden if absent |
 
-All Apache-2.0. Fetched at runtime, never bundled — that is what keeps the
-extension at 181 kB. `bench/verify_models.py` re-checks every id against the
-Hub, because an earlier revision cited two ids that did not exist and would
-have failed silently forever.
+---
 
-## Known gaps
+## Running it
 
-- **The neural layer does not function.** Documented above with reproducible
-  evidence, and disabled rather than faked.
-- **L3 pixel detectors are unmeasured**, so canvas-text and closed-shadow PII
-  remain undetected (0/4 and 4/16).
-- **M1, M3, M5 are unmeasured.**
-- **The Firefox build drops the pixel channel** entirely (no `tabCapture`).
-- **Delta-tile upload** is implemented server-side but not exercised end to end.
+```bash
+# 1. bench harness — every number in this README
+./.venv/Scripts/python.exe bench/gen_synthetic.py        # regenerate corpus
+./.venv/Scripts/python.exe bench/test_contract.py       # wire-format check
+./.venv/Scripts/python.exe bench/test_server.py         # 17 server checks
+cd extension && npx vitest run && npx wxt build         # 162 tests, both targets
+
+# 2. server
+./.venv/Scripts/python.exe -m uvicorn server.app:app --port 8000
+#    (docker compose up for vLLM + weights)
+
+# 3. extension — load unpacked from extension/.output/chrome-mv3
+```
+
+Benchmarks that need a browser (the L3 canvas measurement) generate a page you
+open directly; `bench/l3_canvas.html` is self-contained.
+
+---
+
+## Honest failure notes
+
+- **L2 does not improve F1.** It ships for PERSON only, and the cascade-delta
+  table has a second column of zeroes on purpose. Claiming otherwise would be
+  the easy lie.
+- **A wire-format break shipped with 17/17 server tests passing.** The server's
+  `RedactionModel` declared `pixel_derived`; the extension emits `pixelDerived`.
+  Every real request was rejected with HTTP 422, and the suite never caught it
+  because its fixtures had been written in the server's own spelling — it was
+  testing the server against itself. `bench/test_contract.py` now derives the
+  fixture from the client's Zod schema and fails on any drift.
+- **M1 (40-task visual accuracy) and a true OCR recoverability rate are not
+  measured.** They stay NOT MEASURED. The `tasks.json` suite exists; the runner
+  does not yet drive a real browser against observable state.
+- **T1 latency is a design target**, not a measurement. See M5 above.
+- **The recoverability proxy is not OCR** and would not catch a recognisable
+  face. M3's 0% leak rate is a regex-over-the-redacted-region check.
+- **L3 detection ≠ L3 recovery.** Canvas regions are found and blanked, but the
+  OCR stage (`trocr-small-printed`, 136 MB) has never been run in a browser, so
+  we cannot claim the recovered string was ever checked.
+- **Detecting a sealed shadow root is a heuristic.** There is no API for it; we
+  infer it from a custom element with no open root, no light children, and a
+  real painted box. It will occasionally blank a harmless web component.
+- **Tier-0 is not implemented.** The Prompt API is feature-detected but the local
+  answering path is not wired, so "zero network requests" is a design claim and
+  not a measured one.
+- **L2 truncates at 200 characters per element** to fit the model's 512-token
+  window. A longer PII value inside a very long paragraph would be missed.
+- **`capture_screenshot` and several browser APIs cannot be automated** — the
+  permission dialogs and the tab-capture prompt need a human. Those paths are
+  stubbed behind interfaces and flagged for manual verification.

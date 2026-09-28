@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { JSDOM } from 'jsdom'
-import { hitsFromElement, classifySemantics, type ElementLike } from '../lib/pii'
+import { hitsFromElement, classifySemantics, runL1, type ElementLike } from '../lib/pii'
 import { PII_CLASSES, type Box, type PiiClass } from '../lib/schema'
 import { methodFor } from '../entrypoints/offscreen/redact'
 
@@ -113,6 +113,50 @@ describe('content script — iframe detection emits a box, not just a boolean', 
     // Guards the reasoning behind the 8px threshold: a 1×1 tracking pixel is
     // noise, a real payment widget is not.
     expect(detect({ left: 0, top: 0, width: 640, height: 360 })!.w * 360).toBeGreaterThan(100_000)
+  })
+})
+
+describe('ADDRESS in prose — the one measured residual leak', () => {
+  /**
+   * These assertions document a KNOWN gap rather than a passing one.
+   *
+   * Measured leakage is 3/232, every one of them an address of the
+   * `171, Sector 18, Pune 411001` shape. The shape is
+   * house-number / token / NUMBER / city / PIN, and a regex that catches it
+   * starts matching ordinary prose — the first attempt at this measured
+   * ADDRESS precision 0.08. We chose precision and accepted the gap, because
+   * the fail-closed rule still blanks these on the pixel channel.
+   *
+   * If someone later widens the pattern successfully, the first test will fail
+   * and they will know to re-measure precision before claiming the win.
+   */
+  it('catches the street-word address shapes', () => {
+    for (const t of [
+      '330, FC Road, Chennai 600002',
+      '150, Anna Salai, Delhi 110001',
+      '98, MG Road, Pune 411001',
+      '44, Green Park, Delhi 110016',
+    ]) {
+      expect(runL1(t).some((h) => h.cls === 'ADDRESS'), t).toBe(true)
+    }
+  })
+
+  it('does NOT catch the number-in-the-middle shape — the known gap', () => {
+    // Documented, expected failure. See the describe block above.
+    const hits = runL1('Permanent address: 171, Sector 18, Pune 411001.')
+    expect(hits.some((h) => h.cls === 'ADDRESS')).toBe(false)
+  })
+
+  it('does not match ordinary prose', () => {
+    // The guard that keeps the rule honest: every one of these contains a
+    // comma, a number and a six-digit run.
+    for (const t of [
+      'version 2, section 4, page 100002',
+      'order 88, delivered on 20260101',
+      'Step 1, main 4, total 900001',
+    ]) {
+      expect(runL1(t).some((h) => h.cls === 'ADDRESS'), t).toBe(false)
+    }
   })
 })
 

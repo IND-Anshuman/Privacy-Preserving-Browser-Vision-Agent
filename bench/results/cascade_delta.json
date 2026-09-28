@@ -1,19 +1,131 @@
 {
-  "l2_measured": true,
-  "l2_micro": {
-    "precision": 0.203,
-    "recall": 0.2177,
-    "f1": 0.2101,
-    "tp": 54,
-    "fp": 212,
-    "fn": 194
+  "measured": true,
+  "l2_floor": 0.6,
+  "gt_instances": 268,
+  "l0l1": {
+    "precision": 0.9381,
+    "recall": 0.6791,
+    "f1": 0.7879,
+    "tp": 182,
+    "fp": 12,
+    "fn": 86
   },
-  "l0l1_micro": {
-    "precision": 0.9802,
-    "recall": 0.7984,
-    "f1": 0.88,
-    "tp": 198,
-    "fp": 4,
-    "fn": 50
+  "l2_only": {
+    "precision": 0.0602,
+    "recall": 0.597,
+    "f1": 0.1094,
+    "tp": 160,
+    "fp": 2496,
+    "fn": 108
+  },
+  "cascade": {
+    "precision": 0.0901,
+    "recall": 0.903,
+    "f1": 0.1638,
+    "tp": 242,
+    "fp": 2444,
+    "fn": 26
+  },
+  "delta": {
+    "f1": -0.624,
+    "recall": 0.2239,
+    "precision": -0.848
+  },
+  "per_class": {
+    "PERSON": {
+      "base": 42,
+      "fused": 54,
+      "gt": 54
+    },
+    "EMAIL": {
+      "base": 40,
+      "fused": 48,
+      "gt": 48
+    },
+    "PHONE": {
+      "base": 40,
+      "fused": 56,
+      "gt": 56
+    },
+    "DOB": {
+      "base": 20,
+      "fused": 20,
+      "gt": 20
+    },
+    "ADDRESS": {
+      "base": 18,
+      "fused": 18,
+      "gt": 24
+    },
+    "PASSWORD": {
+      "base": 0,
+      "fused": 0,
+      "gt": 10
+    },
+    "AADHAAR": {
+      "base": 10,
+      "fused": 10,
+      "gt": 10
+    },
+    "PAN": {
+      "base": 4,
+      "fused": 4,
+      "gt": 4
+    },
+    "CREDIT_CARD": {
+      "base": 5,
+      "fused": 5,
+      "gt": 8
+    },
+    "IFSC": {
+      "base": 2,
+      "fused": 2,
+      "gt": 2
+    },
+    "BANK_ACCOUNT": {
+      "base": 4,
+      "fused": 4,
+      "gt": 10
+    },
+    "GSTIN": {
+      "base": 4,
+      "fused": 4,
+      "gt": 4
+    },
+    "FACE": {
+      "base": 0,
+      "fused": 0,
+      "gt": 4
+    },
+    "API_KEY": {
+      "base": 2,
+      "fused": 2,
+      "gt": 4
+    },
+    "MONEY": {
+      "base": 0,
+      "fused": 0,
+      "gt": 2
+    },
+    "ORG": {
+      "base": 0,
+      "fused": 2,
+      "gt": 2
+    },
+    "PASSPORT": {
+      "base": 2,
+      "fused": 2,
+      "gt": 2
+    },
+    "DL": {
+      "base": 2,
+      "fused": 2,
+      "gt": 2
+    },
+    "IP_ADDRESS": {
+      "base": 0,
+      "fused": 0,
+      "gt": 2
+    }
   }
 }

@@ -71,14 +71,39 @@ function l01Detections(html: string): RawHit[] {
 async function l2Detections(pipeline: unknown, texts: string[]): Promise<Array<{ cls: string; text: string; score: number }>> {
   const pipe = pipeline as (t: string[]) => Promise<Array<Array<{ entity: string; score: number; word: string }>>>
   const out: Array<{ cls: string; text: string; score: number }> = []
-  for (let i = 0; i < texts.length; i += 8) {
+
+  // A 400-character string is roughly 150 wordpiece tokens, and a BATCH is
+  // padded to its longest member. A batch of 8 such strings therefore needs
+  // ~1200 positions, which overruns the model's 512 and makes every batch in
+  // the run fail identically.
+  //
+  // That failure was invisible: the `catch {}` below swallowed it and the whole
+  // L2 column reported 0, which reads exactly like "the model found nothing".
+  // So the bound is enforced here, and the error is counted rather than eaten.
+  const BATCH = 4
+  const MAX_CHARS = 200
+  let failed = 0
+  const sliced = texts.map((t) => t.slice(0, MAX_CHARS))
+
+  for (let i = 0; i < sliced.length; i += BATCH) {
     try {
-      const res = await pipe(texts.slice(i, i + 8))
+      const res = await pipe(sliced.slice(i, i + BATCH))
       for (const r of res.flat()) {
         const cls = mapL2Label(r.entity.replace(/^[BSILU]-/, ''))
         if (cls && r.word) out.push({ cls, text: r.word, score: r.score })
       }
-    } catch { /* a bad batch must not abort */ }
+    } catch (e) {
+      failed++
+      if (failed === 1) {
+        console.log(`  L2 batch error: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`)
+      }
+    }
+  }
+  if (failed > 0) {
+    console.log(
+      `  L2: ${failed}/${Math.ceil(sliced.length / BATCH)} batches FAILED — ` +
+      `the L2 column below is understated, not a detector result`,
+    )
   }
   return out
 }
@@ -128,13 +153,30 @@ async function main(): Promise<void> {
     env.allowLocalModels = true
     env.cacheDir = CACHE
     env.localModelPath = CACHE
-    const pipe = await pipeline('token-classification', 'Xenova/bert-base-NER', { dtype: 'q8' } as never)
+    // The model that actually has a PII label space. This harness still pointed
+    // at `Xenova/bert-base-NER`, whose label space is CoNLL-2003
+    // ({PER, ORG, LOC, MISC}) and which therefore returns nothing for an email
+    // or a card number. It made the cascade look like it added nothing, for a
+    // reason that had nothing to do with the cascade.
+    const pipe = await pipeline(
+      'token-classification',
+      'onnx-community/bert-small-pii-detection-ONNX',
+      { dtype: 'q8' } as never,
+    )
+    // One text per ELEMENT, and truncated in characters — this mirrors the
+    // production path in models.ts:runL2. An earlier version of this harness
+    // built one long string per page, and 400 characters is ~150 wordpiece
+    // tokens, so a batch padded out to 797 positions and the model threw
+    // `Attempting to broadcast an axis by a dimension other than 1. 512 by
+    // 797`. The whole L2 column read 0 because the pipeline died, not because
+    // the model found nothing.
+    const MAX_CHARS = 400
     const texts = allHtml.flatMap((x) =>
       Array.from(new JSDOM(x.html).window.document.querySelectorAll('*'))
         .filter((el) => !['script', 'style'].includes(el.tagName.toLowerCase()))
         .map((el) => (el.textContent ?? '').replace(/\s+/g, ' ').trim())
         .filter((t) => t.length > 2)
-        .slice(0, 400),
+        .slice(0, MAX_CHARS),
     )
     l2Dets = await l2Detections(pipe, texts)
     l2 = scoreLayer(allGt, l2Dets.map((d) => ({ cls: d.cls, value: d.text })))

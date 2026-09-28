@@ -32,6 +32,20 @@ from typing import Any
 SCHEMA_VERSION = "1.0.0"
 
 # --------------------------------------------------------------------------
+# Canvas geometry for the pixel-channel adversarial case.
+#
+# Module-level so the draw call in the generated HTML, the ground-truth boxes
+# and the self-check all read the same numbers. When the dimensions were inlined
+# in each place separately, a box could escape the canvas and the self-check
+# passed anyway.
+CANVAS_W = 520
+CANVAS_H = 160
+CANVAS_CHAR_W = 9.6   # 16px monospace advance width
+CANVAS_LINE_TOP = 36  # first baseline, matching fillText(t, 16, 36 + i*26)
+CANVAS_LINE_STEP = 26
+CANVAS_PAD_Y = 5      # covers ascenders and descenders
+
+# --------------------------------------------------------------------------
 # Check helpers — duplicated from extension/lib/pii.ts on purpose. If the two
 # disagree, the benchmark is measuring the wrong thing, so the generator
 # self-verifies every instance it emits (see verify_instance).
@@ -420,12 +434,14 @@ def adversarial_extras(idx: int, rng: random.Random, spec: FormSpec) -> tuple[st
     kind = idx % 5
 
     if kind == 0:
+        # Geometry comes from the module constants, so the draw call and the
+        # ground-truth boxes cannot drift apart.
         # PII drawn INSIDE a <canvas>. Only L3 can see this.
         canvas_pii = f"{rnd_person(rng)}\\n{rnd_email(rng, 'canvas.user')}\\n{rnd_mobile(rng)}"
         html.append(
             f"""<section class="card">
   <h3>Recent activity (rendered by the widget)</h3>
-  <canvas id="activity_canvas" width="520" height="160"
+  <canvas id="activity_canvas" width="{CANVAS_W}" height="{CANVAS_H}"
     data-widget="activity-summary"></canvas>
   <script>
     // Text drawn into the canvas — invisible to every DOM rule (ARCHITECTURE §5).
@@ -435,13 +451,24 @@ def adversarial_extras(idx: int, rng: random.Random, spec: FormSpec) -> tuple[st
       g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
       g.fillStyle = '#111'; g.font = '16px monospace';
       const lines = "{canvas_pii}".split("\\\\n");
-      lines.forEach((t, i) => g.fillText(t, 16, 36 + i * 26));
+      lines.forEach((t, i) => g.fillText(t, 16, {CANVAS_LINE_TOP} + i * {CANVAS_LINE_STEP}));
     }})();
   </script>
 </section>"""
         )
+        # EXACT pixel ground truth. The generator owns this layout: it decides
+        # where each line is drawn, so it can and must record the box rather
+        # than deferring to "resolved at capture time by the L3 text detector".
+        #
+        # Deferring made M3 unmeasurable — the metric needs box IoU against a
+        # known region, and a detector is not a source of truth about itself.
+        # The numbers below mirror the fillText call exactly:
+        #   g.font = '16px monospace'; fillText(t, 16, 36 + i * 26)
+        # Monospace at 16px is ~9.6px per advance; the box is padded vertically
+        # to cover ascenders and descenders, which 16px of line height does not.
         for i, v in enumerate([x for x in canvas_pii.split("\\n") if x]):
             cls = "PERSON" if "@" not in v and not v.isdigit() else ("EMAIL" if "@" in v else "PHONE")
+            y_baseline = CANVAS_LINE_TOP + i * CANVAS_LINE_STEP
             extra.append(
                 GtInstance(
                     id=f"f{idx:02d}_canvas_{i}",
@@ -450,9 +477,16 @@ def adversarial_extras(idx: int, rng: random.Random, spec: FormSpec) -> tuple[st
                     channel="pixels",
                     node_id="activity_canvas",
                     selector="#activity_canvas",
-                    box=None,  # resolved at capture time by the L3 text detector
+                    # CANVAS-LOCAL coordinates. The canvas sits at the top of its
+                    # section, so a consumer adds the canvas's own rect.
+                    box=(
+                        16.0,
+                        float(y_baseline - 14 - CANVAS_PAD_Y),
+                        round(len(v) * CANVAS_CHAR_W, 2),
+                        float(14 + 4 + CANVAS_PAD_Y * 2),
+                    ),
                     redaction_method="pixelate",
-                    note="text drawn in canvas; L3 only",
+                    note="text drawn in canvas; exact box from the draw call",
                 )
             )
 
@@ -642,8 +676,28 @@ def verify_instance(inst: GtInstance) -> list[str]:
         errs.append("phone malformed")
     if not inst.id or not inst.node_id:
         errs.append("missing id")
-    if inst.channel == "pixels" and inst.box is not None:
-        errs.append("pixel GT must have no box until measured")
+    if inst.channel == "pixels" and inst.cls == "FACE":
+        # A face is an <img>, not drawn text: there is no fillText call to
+        # derive a box from, so the generator cannot honestly declare one. The
+        # detector's box is compared against the IMAGE's rect instead, which is
+        # known exactly from the element's own geometry. Exempt here and
+        # handled separately in bench/measure_m3.ts.
+        return errs
+
+    if inst.channel == "pixels":
+        # The generator owns the canvas layout — it emits the fillText call, so
+        # it must also emit the box. This used to assert the opposite ("no box
+        # until measured"), which made M3 unmeasurable: a detector cannot be the
+        # ground truth for its own coverage. The check is now that a declared
+        # box is actually well-formed and inside the canvas.
+        if inst.box is None:
+            errs.append("pixel GT must carry an exact box (the generator owns the draw call)")
+        else:
+            bx, by, bw, bh = inst.box
+            if bw <= 0 or bh <= 0:
+                errs.append(f"pixel GT box has non-positive area: {inst.box}")
+            elif bx < 0 or by < 0 or bx + bw > CANVAS_W or by + bh > CANVAS_H:
+                errs.append(f"pixel GT box escapes the {CANVAS_W}x{CANVAS_H} canvas: {inst.box}")
     return errs
 
 

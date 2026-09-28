@@ -1,0 +1,37 @@
+{
+  "pixel_instances_with_boxes": 12,
+  "mean_iou": 0.0452,
+  "coverage": {
+    "any": 1,
+    "iou50": 0,
+    "iou80": 0
+  },
+  "recoverability_leakage_proxy": {
+    "leaked": 0,
+    "total": 12,
+    "rate": 0,
+    "is_ocr": false,
+    "note": "L1 regex over the redacted region. A proxy for OCR-based recoverability."
+  },
+  "by_class": {
+    "PERSON": {
+      "n": 4,
+      "mean_iou": 0.0339,
+      "covered": 4,
+      "leaked": 0
+    },
+    "EMAIL": {
+      "n": 4,
+      "mean_iou": 0.0695,
+      "covered": 4,
+      "leaked": 0
+    },
+    "PHONE": {
+      "n": 4,
+      "mean_iou": 0.0323,
+      "covered": 4,
+      "leaked": 0
+    }
+  },
+  "failures": []
+}

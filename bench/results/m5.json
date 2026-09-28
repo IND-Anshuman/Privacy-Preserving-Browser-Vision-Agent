@@ -1,0 +1,22 @@
+{
+  "server_reachable": true,
+  "client_stage_ms": {
+    "l01_per_form_ms_p50": 17.94,
+    "l01_per_form_ms_p95": 19.36,
+    "frame_diff_2cycles_ms_p50": 27.95,
+    "pseudonym_ms_p50": 0.02
+  },
+  "server_floor_no_engine_ms": {
+    "samples": 12,
+    "p50": 2.0,
+    "p95": 4.2,
+    "first_delta_p50": 2.0,
+    "note": "Degraded path: no vLLM engine, so the server returns a schema-valid `none` plan. This is a floor, not the T1 turn."
+  },
+  "t1_ttft_with_vllm": {
+    "value": null,
+    "status": "NOT MEASURED",
+    "design_target_p50_ms": 700,
+    "why": "Requires a GPU and VLM weights. Not estimated, not claimed."
+  }
+}

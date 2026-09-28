@@ -13,12 +13,16 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "server"))
+# Import as `server.app`, not a bare `app`. app.py uses package-relative imports
+# (so it runs from the repo root as the README says), and importing it as a
+# top-level module makes those relative imports fail. This suite is the one
+# place that still assumed the old flat layout.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-import app as veil_app  # noqa: E402
-from actions import ACTION_NAMES, check_plan_against_state, validate_plan  # noqa: E402
+from server import app as veil_app  # noqa: E402
+from server.actions import ACTION_NAMES, check_plan_against_state, validate_plan  # noqa: E402
 
 SCREEN_STATE = {
     "schema_version": "1.0.0",
@@ -46,10 +50,10 @@ MANIFEST = {
     "redactions": [
         {"id": "r1", "box": {"x": 10, "y": 20, "w": 200, "h": 30}, "cls": "PERSON",
          "placeholder": {"token": "[PERSON_1]", "cls": "PERSON"}, "method": "solid_fill",
-         "score": 0.99, "source": "L0", "pixel_derived": False},
+         "score": 0.99, "source": "L0", "pixelDerived": False},
         {"id": "r2", "box": {"x": 10, "y": 60, "w": 200, "h": 30}, "cls": "PASSWORD",
          "placeholder": {"token": "[PASSWORD]", "cls": "PASSWORD"}, "method": "solid_fill",
-         "score": 0.99, "source": "L0", "pixel_derived": False},
+         "score": 0.99, "source": "L0", "pixelDerived": False},
     ],
     "frame_hash": "abcdef0123456789",
     "signature": "a" * 32,

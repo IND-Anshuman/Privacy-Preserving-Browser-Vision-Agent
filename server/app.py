@@ -19,18 +19,48 @@ import hashlib
 import json
 import logging
 import os
+import sys
 import time
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from actions import ActionPlan, validate_plan
-from prompts import build_system_preamble
-from vllm_client import VLLMClient, VLLMUnavailable
+# Sibling modules are imported as `from actions import ...`, which only resolves
+# when the CWD is server/. That worked for the test suite (it chdir's) and broke
+# every documented invocation — `uvicorn server.app:app` from the repo root
+# failed with ModuleNotFoundError, and so would the Dockerfile's WORKDIR guess.
+#
+# Prefer the package-relative import; fall back to the flat one so running from
+# inside server/ keeps working.
+# A broad `except ImportError` here is a trap: the relative import can fail for
+# a reason that has nothing to do with the import style (a missing dependency
+# inside actions.py, say), and the fallback then reports a confusing
+# ModuleNotFoundError for a module that plainly exists. So the fallback is
+# guarded on the symptom, and the original error is printed.
+try:
+    from .actions import ActionPlan, validate_plan
+    from .prompts import build_system_preamble
+    from .vllm_client import VLLMClient, VLLMUnavailable
+except ImportError as _rel_err:  # running as a script, not as `server.app`
+    # Guard on the symptom. A broad except here hid a real failure: the
+    # relative import raised for `vllm_client` from inside prompts.py, the
+    # fallback ran, and the resulting error named a module that plainly existed.
+    if getattr(_rel_err, "name", None) not in {
+        "actions", "prompts", "vllm_client", "server",
+    }:
+        raise
+    # The fallback only resolves if server/ itself is importable, which it is
+    # not when the CWD is the repo root — so put it on the path explicitly
+    # rather than depending on how uvicorn was invoked.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from actions import ActionPlan, validate_plan
+    from prompts import build_system_preamble
+    from vllm_client import VLLMClient, VLLMUnavailable
 
 log = logging.getLogger("veil")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -67,7 +97,15 @@ class RedactionModel(BaseModel):
     method: str
     score: float = Field(ge=0, le=1)
     source: str
-    pixel_derived: bool
+
+    # The CLIENT sends `pixelDerived` (camelCase — see RedactionEntrySchema in
+    # extension/lib/schema.ts). This field was `pixel_derived`, so every real
+    # manifest from the extension failed validation with 422 and the server
+    # tests never caught it because their fixtures were written in the server's
+    # own spelling. The client is the source of truth for the wire format.
+    pixelDerived: bool = Field(alias="pixelDerived")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ManifestModel(BaseModel):

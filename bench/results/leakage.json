@@ -1,23 +1,27 @@
 {
-  "values_checked": 212,
+  "values_checked": 232,
   "text_channel": {
     "l0l1_only": {
-      "leaked": 0,
-      "rate": 0,
-      "by_class": {}
+      "leaked": 3,
+      "rate": 0.0129,
+      "by_class": {
+        "ADDRESS": 3
+      }
     },
     "with_pii_model": {
-      "leaked": 0,
-      "rate": 0,
-      "by_class": {}
+      "leaked": 3,
+      "rate": 0.0129,
+      "by_class": {
+        "ADDRESS": 3
+      }
     }
   },
   "box_coverage": {
-    "checked": 212,
-    "uncovered": 6,
-    "miss_rate": 0.0283,
+    "checked": 232,
+    "uncovered": 9,
+    "miss_rate": 0.0388,
     "by_class": {
-      "ADDRESS": 2,
+      "ADDRESS": 5,
       "BANK_ACCOUNT": 4
     }
   }

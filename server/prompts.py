@@ -10,7 +10,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from vllm_client import REDACTION_CONTRACT
+try:
+    from .vllm_client import REDACTION_CONTRACT
+except ImportError:  # running as a script (cwd=server/), not as `server.prompts`
+    from vllm_client import REDACTION_CONTRACT
 
 BASE_SYSTEM = """You are Veil, a browser assistant that acts on a page the user is looking at.
 

@@ -601,7 +601,17 @@ const RULES: Rule[] = [
      * gone rather than kept at a lower score.
      */
     cls: 'ADDRESS',
-    re: /\b\d{1,4}\s*,\s*[A-Za-z][A-Za-z.'-]*(?:\s+[A-Za-z][A-Za-z.'-]*){0,4}\s*(?:road|rd\.?|street|st\.?|avenue|ave\.?|lane|ln\.?|drive|dr\.?|nagar|colony|boulevard|blvd\.?|park|square|cross)\b\.?[^.\n]{0,40}?\b\d{6}\b/gi,
+    // The street-word list matters more than it looks. The first version of
+    // this rule matched only road/street/avenue/nagar/…, and the measured
+    // leakage audit then found 4 addresses surviving in prose: "150, Anna
+    // Salai, Delhi 110001" and "171, Sector 18, Pune 411001". Both are
+    // ordinary Indian addresses; neither contains a word the rule knew.
+    //
+    // Widening the list is safe because the rule still requires ALL of
+    // house-number, comma, street-ish token and a 6-digit PIN. Removing the
+    // bare-PIN variant (which measured precision 0.08) is what keeps this
+    // from over-matching.
+    re: /\b\d{1,4}\s*,\s*[A-Za-z][A-Za-z0-9.'-]*(?:\s+[A-Za-z0-9][A-Za-z0-9.'-]*){0,4}\s*(?:road|rd\.?|street|st\.?|salai|avenue|ave\.?|lane|ln\.?|sector|sec\.?|block|blk\.?|plot|marg|cross|nagar|colony|boulevard|blvd\.?|park|square|gali|main|byepass|highway)\b\.?[^.\n]{0,40}?\b\d{6}\b/gi,
     score: 0.8,
   },
 ]

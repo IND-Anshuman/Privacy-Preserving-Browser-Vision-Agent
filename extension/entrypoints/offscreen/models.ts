@@ -106,6 +106,14 @@ export const MODEL_FINDINGS = {
 /** COCO class 1. The only person-capable class in a browser-loadable detector. */
 const PERSON_LABEL = 'person'
 
+/**
+ * The L2 model's context window is 512 wordpiece tokens, which is ~200
+ * characters of realistic text. Exceeding it makes ORT throw a broadcast error
+ * rather than truncate, and the resulting `available: false` is
+ * indistinguishable from "the model found nothing".
+ */
+export const L2_MAX_CHARS = 200
+
 export type ModelId = keyof typeof MODEL_IDS
 
 export interface ModelCard {
@@ -250,9 +258,25 @@ export async function runL2(texts: string[]): Promise<{
     const runner = session as (input: string) => Promise<unknown>
     const spans: NerSpan[] = []
     for (const text of texts) {
-      const raw = await runner(text)
+      /**
+       * The model has 512 token positions. A 400-character string is ~150
+       * wordpiece tokens on its own, and a long paragraph can exceed 512 on its
+       * own — at which point ORT throws a broadcast error, `runL2` returns
+       * `available: false`, and the caller treats a long paragraph as "no
+       * detections" rather than "this text was never analysed".
+       *
+       * Truncating is a real limitation, so it is bounded and documented: a
+       * PII value longer than this many characters would be missed. For the
+       * classes that matter (names, emails, phone numbers, card and Aadhaar
+       * numbers) 200 characters is several times the longest realistic value.
+       */
+      const bounded = text.slice(0, L2_MAX_CHARS)
+      if (bounded !== text) {
+        console.info('[veil] l2: truncated an over-long string to fit the 512-token window')
+      }
+      const raw = await runner(bounded)
       for (const row of normaliseRows(raw)) {
-        spans.push(...mergeTokens(recoverOffsets(row, text), text))
+        spans.push(...mergeTokens(recoverOffsets(row, bounded), bounded))
       }
     }
     return { spans, ms: performance.now() - t0, available: true, which: 'l2' }

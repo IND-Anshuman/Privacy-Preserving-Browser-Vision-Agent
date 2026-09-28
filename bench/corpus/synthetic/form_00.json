@@ -6,7 +6,7 @@
   "split": "synthetic",
   "adversarial_kind": 0,
   "html": "form_00.html",
-  "sha256": "20cd71d7a9d6c23b49d3265ab5ab3ca0a550695583e024b278aa22767c27ce51",
+  "sha256": "c0841fafcf3e0963b5b67f4cb819e3c8f5fbd482693272da3dfa5704b6027d23",
   "notes": "category=banking; adversarial=0",
   "instances": [
     {
@@ -177,7 +177,7 @@
     {
       "id": "f00_card_number",
       "cls": "CREDIT_CARD",
-      "value": "4539894994722922",
+      "value": "4539427795899860",
       "channel": "dom",
       "node_id": "card_number",
       "selector": "#card_number",
@@ -242,9 +242,14 @@
       "node_id": "activity_canvas",
       "selector": "#activity_canvas",
       "span": null,
-      "box": null,
+      "box": [
+        16.0,
+        17.0,
+        96.0,
+        28.0
+      ],
       "redaction_method": "pixelate",
-      "note": "text drawn in canvas; L3 only"
+      "note": "text drawn in canvas; exact box from the draw call"
     },
     {
       "id": "f00_canvas_1",
@@ -254,9 +259,14 @@
       "node_id": "activity_canvas",
       "selector": "#activity_canvas",
       "span": null,
-      "box": null,
+      "box": [
+        16.0,
+        43.0,
+        240.0,
+        28.0
+      ],
       "redaction_method": "pixelate",
-      "note": "text drawn in canvas; L3 only"
+      "note": "text drawn in canvas; exact box from the draw call"
     },
     {
       "id": "f00_canvas_2",
@@ -266,9 +276,14 @@
       "node_id": "activity_canvas",
       "selector": "#activity_canvas",
       "span": null,
-      "box": null,
+      "box": [
+        16.0,
+        69.0,
+        96.0,
+        28.0
+      ],
       "redaction_method": "pixelate",
-      "note": "text drawn in canvas; L3 only"
+      "note": "text drawn in canvas; exact box from the draw call"
     }
   ],
   "field_ids": [
