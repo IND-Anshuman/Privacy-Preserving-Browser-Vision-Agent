@@ -114,6 +114,17 @@ export const MessageSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('offscreen:arm'), runId: z.string(), sessionId: z.string() }),
   z.object({ kind: z.literal('offscreen:capture'), runId: z.string(), mode: z.enum(['auto', 'stream', 'snapshot']), boxes: z.array(z.unknown()), marks: z.array(z.unknown()) }),
   z.object({ kind: z.literal('offscreen:release') }),
+  /**
+   * Ask the on-device (Prompt API) tier a question. Bounded text because the
+   * input is a prompt: an unbounded screen dump would be a free prompt-injection
+   * surface, and the labels are already pseudonymized upstream.
+   */
+  z.object({
+    kind: z.literal('offscreen:local'),
+    runId: z.string(),
+    intent: z.string().max(2000),
+    screenText: z.string().max(20000),
+  }),
 
   // offscreen → SW
   z.object({
@@ -151,7 +162,7 @@ export const MessageSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('panel:plan'), runId: z.string(), plan: ActionPlanSchema }),
   z.object({ kind: z.literal('panel:stage'), runId: z.string(), stage: z.string(), ms: z.number() }),
   z.object({ kind: z.literal('panel:ledger'), runId: z.string(), entries: z.array(z.unknown()) }),
-  z.object({ kind: z.literal('panel:answer'), runId: z.string(), text: z.string(), tier: z.string() }),
+  z.object({ kind: z.literal('panel:answer'), runId: z.string(), text: z.string(), tier: z.string(), source: z.string().optional() }),
   z.object({ kind: z.literal('panel:error'), runId: z.string(), message: z.string() }),
   z.object({ kind: z.literal('panel:rehydrate'), manifest: z.unknown().nullable(), screenState: z.unknown().nullable() }),
 ])

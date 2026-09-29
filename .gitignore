@@ -17,3 +17,4 @@ bench/l3rec_*.html
 .env
 !.env.example
 extension/out-manual/
+extension/out-verify/

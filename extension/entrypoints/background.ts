@@ -12,7 +12,7 @@
 import { defineBackground } from 'wxt/sandbox'
 import type { Msg, VeilMessage } from '@/lib/messages'
 import { parseMessage } from '@/lib/messages'
-import { parseActionPlan, parseManifest, ScreenStateSchema, SCHEMA_VERSION, type ActionPlan } from '@/lib/schema'
+import { parseActionPlan, parseManifest, ScreenStateSchema, SCHEMA_VERSION, type ActionPlan, type ScreenNode } from '@/lib/schema'
 
 /* ------------------------------------------------------------------ *
  *  Run state. Deliberately small and serializable — it is the ONLY
@@ -323,8 +323,56 @@ async function onRedactReady(msg: Extract<VeilMessage, { kind: 'redact:ready' }>
 
   // 2. Tier-0 short circuit: a known local intent needs no network at all.
   if (run.tier === 'T0') {
-    const answer = await toOffscreen({ kind: 'offscreen:capture', runId: run.runId, mode: 'auto', boxes: [], marks: [] })
-    sendToPanel({ kind: 'panel:answer', runId: run.runId, text: String(answer ?? ''), tier: 'T0' })
+    // This used to send `offscreen:capture` and push the capture REPORT into
+    // the chat bubble, so the local button answered `{"ok":true,"bytes":48210,
+    // "redactions":7}`. tier0.answer() existed in offscreen/models.ts the whole
+    // time and was never called. Now we ask the Prompt API, and when it is not
+    // available we say so instead of inventing an answer.
+    const intent = run.intent
+    // The only screen text available here is `run.screenState`, and it is
+    // already pseudonymized — labels carry [PERSON_a3_…] tokens, never raw
+    // values. Feeding that to an on-device model is safe by construction: there
+    // is nothing left to leak. Walk the real tree rather than inventing a
+    // `manifest.sawText` field, which does not exist in the schema.
+    // `screenState` is `unknown` in RunState on purpose — it arrives as an
+    // untrusted message and is only ever trusted after schema validation. Parse
+    // it here for the same reason rather than casting, so a malformed tree can
+    // never reach the prompt builder.
+    let screenText = ''
+    if (run.screenState) {
+      const parsed = ScreenStateSchema.safeParse(run.screenState)
+      if (parsed.success) screenText = flattenScreenText(parsed.data.root)
+    }
+    const local = (await toOffscreen({
+      kind: 'offscreen:local',
+      runId: run.runId,
+      intent,
+      screenText,
+    })) as { ok: boolean; text?: string; source?: string; error?: string }
+
+    if (local?.ok && local.text) {
+      sendToPanel({
+        kind: 'panel:answer',
+        runId: run.runId,
+        text: local.text,
+        tier: 'T0',
+        source: local.source ?? 'prompt-api',
+      })
+    } else {
+      // No on-device model (the common case in Chrome today). Say the truth
+      // rather than shipping a JSON blob as if it were an answer.
+      const why = local?.error ?? local?.source ?? 'no on-device model in this browser'
+      sendToPanel({
+        kind: 'panel:answer',
+        runId: run.runId,
+        text:
+          `I can redact this page, but I can't answer it on-device here — ${why}. ` +
+          `Nothing was sent anywhere. Use the agent mode and the redacted screen ` +
+          `goes to your configured model instead.`,
+        tier: 'T0',
+        source: 'unavailable',
+      })
+    }
     run.stage = 'done'
     return { ok: true, tier: 'T0' }
   }
@@ -546,6 +594,21 @@ async function callServer(
   } finally {
     clearTimeout(t)
   }
+}
+
+/**
+ * Depth-first text of a screen-state tree, for the on-device tier.
+ *
+ * Labels are already pseudonymized upstream (`[PERSON_a3_1a2b3c4d]`, never the
+ * raw value), so this string is safe to hand to a local model by construction.
+ * Bounded so a pathological page cannot balloon a prompt.
+ */
+function flattenScreenText(node: ScreenNode, depth = 0, out: string[] = []): string {
+  if (out.length >= 400 || depth > 12) return out.join('\n')
+  if (node.label) out.push(node.label)
+  if (node.value) out.push(node.value)
+  for (const child of node.children ?? []) flattenScreenText(child, depth + 1, out)
+  return out.join('\n')
 }
 
 async function executeStep(runId: string, action: unknown): Promise<unknown> {

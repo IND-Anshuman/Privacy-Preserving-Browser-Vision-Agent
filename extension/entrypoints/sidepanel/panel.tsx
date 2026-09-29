@@ -26,6 +26,7 @@
  */
 import { parseMessage, type VeilMessage } from '@/lib/messages'
 import type { ActionPlan, RedactionManifest } from '@/lib/schema'
+import { PASSWORD_TOKEN } from '@/lib/pseudonym'
 
 const $ = <T extends HTMLElement>(id: string): T | null => document.getElementById(id) as T | null
 
@@ -69,6 +70,19 @@ const state = {
   busy: false,
   /** 'auto' sends a request; 'local' answers without one. */
   mode: 'auto' as 'auto' | 'local',
+  /**
+   * Server reachability, as a separate fact from `busy`.
+   * `null` = not probed yet. Probed from /health, never from local run state,
+   * because "the panel is idle" and "the server answers" are unrelated.
+   */
+  health: null as null | { ok: boolean; detail?: string; provider?: string; model?: string },
+  /**
+   * Read from chrome.storage.local, the same place the SW reads it from, so
+   * the panel probes the server the SW will actually call. A hardcoded default
+   * here would drift from a user-configured origin and report on the wrong
+   * server.
+   */
+  serverOrigin: 'http://127.0.0.1:8000',
 }
 
 /* ------------------------------------------------------------------ *
@@ -382,10 +396,72 @@ function renderBusy(): void {
   if (local) local.disabled = state.busy || blocked
   const conn = $('conn')
   if (conn) {
-    const t = state.busy ? 'working' : state.confirm ? 'waiting' : 'ready'
-    conn.textContent = t
-    conn.setAttribute('data-state', state.confirm ? 'local' : state.busy ? 'local' : 'ready')
+    // Local run state and server reachability are DIFFERENT facts. This used to
+    // render 'ready' from `busy` alone, so the panel claimed to be ready with no
+    // server running — the same failure shape as the CORS 400, where everything
+    // looks healthy and the backend is unreachable.
+    if (state.busy) {
+      conn.textContent = 'working'
+      conn.setAttribute('data-state', 'local')
+    } else if (state.confirm) {
+      conn.textContent = 'waiting'
+      conn.setAttribute('data-state', 'local')
+    } else if (state.health === null) {
+      conn.textContent = 'checking server…'
+      conn.setAttribute('data-state', 'local')
+    } else if (state.health.ok) {
+      // Name the live provider: on stage this is the difference between
+      // "trust me" and a readable proof of which model is answering.
+      conn.textContent = `ready · ${state.health.provider}`
+      conn.setAttribute('data-state', 'ready')
+    } else {
+      conn.textContent = `server unreachable (${state.health.detail})`
+      conn.setAttribute('data-state', 'error')
+    }
   }
+  const hv = $('p-provider')
+  if (hv && state.health) {
+    hv.textContent = state.health.ok
+      ? `${state.health.provider} · ${state.health.model ?? 'model unknown'}`
+      : `unreachable — ${state.health.detail}`
+  }
+}
+
+/**
+ * Probe the server once on panel open.
+ *
+ * Deliberately a read-only GET on /health: it carries no screen content, so
+ * calling it does not violate the promise that pressing a button is the only
+ * thing that ships data.
+ */
+async function probeHealth(): Promise<void> {
+  const url = `${state.serverOrigin}/health`
+  try {
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), 4000)
+    const res = await fetch(url, { signal: ctl.signal })
+    clearTimeout(timer)
+    if (!res.ok) {
+      state.health = { ok: false, detail: `HTTP ${res.status}` }
+      renderBusy()
+      return
+    }
+    const j = (await res.json()) as { provider?: string | null; model?: string | null }
+    // `provider` is null when nothing is reachable. Say that, rather than
+    // printing "unknown" as though a provider had answered and declined to name
+    // itself — the server was honest and the panel should be too.
+    state.health = {
+      ok: true,
+      provider: j.provider ?? 'no provider configured',
+      model: j.model ?? undefined,
+    }
+  } catch (e) {
+    state.health = {
+      ok: false,
+      detail: e instanceof Error && e.name === 'AbortError' ? 'timeout' : 'not running',
+    }
+  }
+  renderBusy()
 }
 
 function renderThread(): void {
@@ -509,9 +585,28 @@ function renderPrivacy(): void {
   }
 
   const mode = $('p-mode')
-  if (mode) mode.textContent = state.mode === 'local' ? 'off — answering here' : 'on, after hiding sensitive items'
+  if (mode) mode.textContent = state.mode === 'local' ? 'on — answering on-device, nothing sent' : 'off — sends the redacted screen'
   const op = $('p-opaque')
   if (op) op.textContent = state.opaque > 0 ? `${state.opaque} blocked entirely` : 'all regions readable'
+
+  // The password claim is ASSERTED, not asserted-about.
+  //
+  // This string used to be literal HTML ("never sent, in any mode"), which meant
+  // it would keep claiming to be true even if the schema grew a password field.
+  // Instead: name the schema's actual password sentinel, and say so honestly
+  // if it is ever absent from a run's manifest.
+  const pass = $('p-pass')
+  if (pass) {
+    const m = state.manifest
+    if (!m) {
+      pass.textContent = 'no run yet — passwords are never serialized'
+    } else {
+      // The token lives at `placeholder.token`, not `token` — redactions carry
+      // a `placeholder` object with the class and the emitted sentinel.
+      const n = m.redactions.filter((r) => r.placeholder.token === PASSWORD_TOKEN).length
+      pass.textContent = n > 0 ? `never sent — ${n} in this run` : 'never sent, in any mode'
+    }
+  }
 }
 
 function renderTimeline(): void {
@@ -623,3 +718,17 @@ $('run')?.addEventListener('click', () => {
 })
 
 render()
+
+// Probe the server on open, using the same stored origin the SW calls. Until
+// this resolves the dot reads "checking server…" rather than "ready", so the
+// panel can never claim a connection it has not made.
+void (async () => {
+  try {
+    const got = await chrome.storage.local.get(['serverOrigin'])
+    const v = got['serverOrigin']
+    if (typeof v === 'string' && /^https?:\/\//.test(v)) state.serverOrigin = v.replace(/\/$/, '')
+  } catch {
+    /* storage unavailable: keep the default, which is also the SW's default */
+  }
+  await probeHealth()
+})()

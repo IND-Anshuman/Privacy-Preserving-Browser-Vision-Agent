@@ -135,6 +135,21 @@ async function handle(msg: VeilMessage): Promise<unknown> {
     }
     case 'offscreen:capture':
       return runCapture(msg.runId, msg.boxes as Array<{ id: string; cls: PiiClass; box: { x: number; y: number; w: number; h: number }; score: number; source: 'L0' | 'L1' | 'L2' | 'L3'; text?: string }>, msg.marks as MarkAssignment[])
+    case 'offscreen:local': {
+      // The real tier-0 path. `PromptApiTier0` has been fully implemented since
+      // it was written, but nothing ever called it: background.ts's T0 branch
+      // sent `offscreen:capture` and pushed the *capture report* into the chat
+      // bubble. Asking "what is on this page?" therefore answered
+      // {"ok":true,"bytes":48210,"redactions":7} — a JSON blob, not an answer.
+      // The button worked; the feature behind it was never reachable.
+      const { intent, screenText } = msg as { intent: string; screenText: string }
+      try {
+        const a = await tier0.answer(intent, screenText)
+        return { ok: true, text: a.text, source: a.source }
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) }
+      }
+    }
     case 'offscreen:arm':
       return { ok: true }
     case 'offscreen:release':
