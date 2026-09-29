@@ -37,6 +37,11 @@ export default defineConfig({
         'tabs',
         'scripting',
         'storage',
+        // Required for frame-scoped execution: the SW must be able to
+        // enumerate a tab's frames and address `sendMessage` at exactly one of
+        // them. Without it, actions could only ever be scoped to the top
+        // document — safe, but cross-frame tasks would be impossible.
+        'webNavigation',
         ...(isFirefox ? [] : ['tabCapture', 'offscreen', 'sidePanel']),
       ],
 

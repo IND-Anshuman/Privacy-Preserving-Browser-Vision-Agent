@@ -16,6 +16,8 @@ import {
 } from '@/lib/schema'
 import { classifySemantics, hitsFromElement, runL1, REDACTED_PASSWORD, type RawHit } from '@/lib/pii'
 import { assignMarks, resolveMark, type MarkAssignment, type MarkCandidate } from '@/lib/som'
+import { verifyEffect } from '@/lib/verify'
+import { frameDecision } from '@/lib/frames'
 import { decideSafety } from '@/lib/action-safety'
 import { Pseudonymizer } from '@/lib/pseudonym'
 import { fnv1a } from '@/lib/framediff'
@@ -520,6 +522,73 @@ interface PlanAction {
   amount?: number
 }
 
+/**
+ * The shape every step reports back. `ok` means "the page accepted this";
+ * `effect` means "and here is the evidence". They are separate because an
+ * action can be accepted and still not do anything — which is exactly what a
+ * click on a non-handler button looks like.
+ */
+interface ExecResult {
+  ok: boolean
+  action: string
+  ms: number
+  effect: 'confirmed' | 'changed' | 'unchanged' | 'unknown'
+  error?: string
+  needsConfirm?: boolean
+  reason?: string
+}
+
+/**
+ * A step that demonstrably did what it was asked.
+ *
+ * `ok` is true only for `confirmed`/`changed`. An `unchanged` or `unknown`
+ * effect is reported as NOT ok, because the alternative — reporting success
+ * for a dispatch that changed nothing — is the exact bug this replaces.
+ */
+function effectResult(action: string, effect: ExecResult['effect'], t0: number): ExecResult {
+  const ok = effect === 'confirmed' || effect === 'changed'
+  return {
+    ok,
+    action,
+    ms: performance.now() - t0,
+    effect,
+    ...(ok ? {} : { error: effect === 'unchanged' ? 'the page did not change' : 'could not be verified' }),
+  }
+}
+
+/** A step the page refused, with a reason the user can act on. */
+function failedResult(action: string, error: string, t0: number): ExecResult {
+  return { ok: false, action, ms: performance.now() - t0, effect: 'unchanged', error }
+}
+
+/**
+ * A control that cannot be operated on, however plausible the plan looks.
+ *
+ * `HTMLElement.click()` on a disabled button is a silent no-op, so this has to
+ * be checked before dispatching — afterwards there is nothing left to observe.
+ */
+function isInertControl(el: HTMLElement): boolean {
+  // `disabled` lives on the specific control interfaces, not on HTMLElement.
+  const ctl = el as HTMLElement & { disabled?: boolean }
+  if (ctl.disabled === true) return true
+  if (el.getAttribute('aria-disabled') === 'true') return true
+  if (el.hasAttribute('inert')) return true
+  if (el.getAttribute('hidden') !== null) return true
+  if (el.getAttribute('aria-hidden') === 'true') return true
+  const style = el.getAttribute('style') ?? ''
+  if (/display\s*:\s*none/i.test(style)) return true
+  if (/visibility\s*:\s*hidden/i.test(style)) return true
+  // Real geometry, when the browser will tell us. This is the check jsdom
+  // cannot make, which is why it is last.
+  if (typeof el.getClientRects === 'function') {
+    const rects = el.getClientRects()
+    if (rects.length === 0) return true
+    const r = el.getBoundingClientRect()
+    if (r.width < 1 || r.height < 1) return true
+  }
+  return false
+}
+
 function liveCandidates(): MarkCandidate[] {
   const out: MarkCandidate[] = []
   for (const el of document.querySelectorAll<HTMLElement>('input,button,a,select,textarea,[role]')) {
@@ -548,7 +617,7 @@ function byHandle(nodeId: string): HTMLElement | null {
   return cur instanceof HTMLElement ? cur : null
 }
 
-async function executeAction(runId: string, index: number, act: PlanAction): Promise<unknown> {
+async function executeAction(runId: string, index: number, act: PlanAction): Promise<ExecResult> {
   const t0 = performance.now()
 
   // Re-resolve the mark against the LIVE page, not the stale snapshot.
@@ -586,52 +655,92 @@ async function executeAction(runId: string, index: number, act: PlanAction): Pro
   }
 
   switch (act.action) {
-    case 'click':
-      el?.click()
-      break
-    case 'focus':
-      el?.focus()
-      break
-    case 'hover':
-      el?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-      break
+    case 'click': {
+      if (!el) return failedResult(act.action, 'the control was not found', t0)
+      // A click on a disabled or hidden control is the canonical silent
+      // failure: `el.click()` is a no-op and used to report success. Refuse
+      // BEFORE dispatching so the page is never lied about.
+      if (isInertControl(el)) {
+        return failedResult(act.action, 'that control is disabled or hidden', t0)
+      }
+      // Did anything actually respond? Listen on the element itself and
+      // watch the document: a click handler usually lives on an ancestor.
+      let responded = false
+      const onHit = (): void => { responded = true }
+      el.addEventListener('click', onHit, { once: true, capture: true })
+      try {
+        el.click()
+      } finally {
+        el.removeEventListener('click', onHit, true)
+      }
+      return effectResult(act.action, verifyEffect('click', el, { probe: () => ({ responded }) }), t0)
+    }
+    case 'focus': {
+      if (!el) return failedResult(act.action, 'the control was not found', t0)
+      el.focus()
+      return effectResult(act.action, verifyEffect('focus', el), t0)
+    }
+    case 'hover': {
+      if (!el) return failedResult(act.action, 'the control was not found', t0)
+      el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      return effectResult(act.action, verifyEffect('hover', el), t0)
+    }
     case 'fill': {
-      if (!el) break
+      if (!el) return failedResult(act.action, 'the field was not found', t0)
       // The sensitive-target guard for `fill` now lives in decideSafety, so it
       // runs for every action instead of only this one.
       const value = act.value ?? ''
       setNativeValue(el, value)
       el.dispatchEvent(new Event('input', { bubbles: true }))
       el.dispatchEvent(new Event('change', { bubbles: true }))
-      break
+      // Read the value BACK. A controlled React input restores the old value
+      // on the next render, so "we called the setter" is not evidence.
+      return effectResult(act.action, verifyEffect('fill', el, { expected: value }), t0)
     }
     case 'select': {
-      if (el instanceof HTMLSelectElement && act.value) {
-        el.value = act.value
-        el.dispatchEvent(new Event('change', { bubbles: true }))
+      if (!el) return failedResult(act.action, 'the control was not found', t0)
+      if (!(el instanceof HTMLSelectElement)) {
+        return failedResult(act.action, 'that is not a select element', t0)
       }
-      break
+      if (!act.value) return failedResult(act.action, 'no option was specified', t0)
+      // Setting an absent option value silently leaves the selection alone.
+      const exists = Array.from(el.options).some((o) => o.value === act.value)
+      if (!exists) {
+        return failedResult(act.action, `no option matches "${act.value}"`, t0)
+      }
+      el.value = act.value
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      return effectResult(act.action, verifyEffect('select', el, { expected: act.value }), t0)
     }
-    case 'scroll':
+    case 'scroll': {
+      const before = { x: window.scrollX, y: window.scrollY }
       window.scrollBy({
         top: act.direction === 'up' ? -(act.amount ?? 400) : act.amount ?? 400,
         behavior: 'smooth',
       })
-      break
-    case 'navigate':
-      if (act.url) location.href = act.url
-      break
+      // Smooth scrolling is async, so the position will not have moved yet.
+      // Report `unknown` honestly rather than claiming a confirmed scroll.
+      void before
+      return effectResult(act.action, 'unknown', t0)
+    }
+    case 'navigate': {
+      if (!act.url) return failedResult(act.action, 'no url was specified', t0)
+      // This document is about to be replaced; any report we send now may not
+      // be delivered. Record the dispatch and let the SW observe the result.
+      location.href = act.url
+      return { ok: true, action: act.action, ms: performance.now() - t0, effect: 'unknown' }
+    }
     case 'wait_for':
       await new Promise((r) => setTimeout(r, Math.min(2000, act.amount ?? 200)))
-      break
+      return effectResult(act.action, 'unknown', t0)
     case 'none':
     case 'ask_user':
-      break
+      // Neither performs page work. The SW handles them in the loop.
+      return effectResult(act.action, 'unknown', t0)
     default:
-      break
+      // An unrecognised verb is a failure, not a silent success.
+      return failedResult(String(act.action), `unsupported action: ${act.action}`, t0)
   }
-
-  return { ok: true, status: act.action, ms: performance.now() - t0 }
 }
 
 function isSensitiveTarget(el: HTMLElement): boolean {
@@ -656,8 +765,57 @@ function setNativeValue(el: HTMLElement, value: string): void {
   else (el as HTMLInputElement).value = value
 }
 
-function confirmToast(text: string, runId: string, index: number): unknown {
-  return { ok: false, needsConfirm: true, reason: text, runId, actionIndex: index }
+function confirmToast(text: string, runId: string, index: number): ExecResult {
+  return { ok: false, action: 'confirm', ms: 0, effect: 'unknown', needsConfirm: true, reason: text }
+}
+
+/**
+ * Execute one step and report it.
+ *
+ * `execute:done` used to have NO producer anywhere in the codebase: the panel
+ * listened for it and the content script never sent it, so step rows stayed
+ * `pending` forever while the run reported success. It is emitted here for
+ * every step, with the REAL index, whether the step succeeded or not.
+ *
+ * A step that needs approval also emits `execute:confirm_required`. That is
+ * the message the side panel renders its Approve/Decline card from. It
+ * previously existed only as a listener, so the interlock was unreachable: the
+ * user got a plain text bubble, the run blocked for 60s, and then reported
+ * "Cancelled at your request."
+ */
+async function runAndReport(runId: string, index: number, act: PlanAction): Promise<ExecResult> {
+  const res = await executeAction(runId, index, act)
+
+  if (res.needsConfirm) {
+    // Fire-and-forget is correct here: the reply channel must stay open for
+    // the `sendResponse` that follows, or the SW sees a dead port.
+    void chrome.runtime
+      .sendMessage({
+        kind: 'execute:confirm_required',
+        runId,
+        actionIndex: index,
+        label: res.reason ?? 'This step needs your confirmation.',
+      })
+      .catch(() => {
+        // The panel may be closed. The SW's bounded wait will time out and
+        // treat the run as declined, which is the safe direction.
+      })
+  }
+
+  void chrome.runtime
+    .sendMessage({
+      kind: 'execute:done',
+      runId,
+      actionIndex: index,
+      ok: res.ok,
+      status: res.effect,
+      ms: res.ms,
+    })
+    .catch(() => {
+      /* panel closed; the SW still receives the sendResponse payload */
+    })
+
+  return res
 }
 
 /* ------------------------------------------------------------------ *
@@ -740,8 +898,26 @@ async function handle(msg: VeilMessage): Promise<unknown> {
         opaqueFrames: opaqueFrames.length,
       }
     }
-    case 'content:execute':
-      return executeAction(msg.runId, 0, msg.action as PlanAction)
+    case 'content:execute': {
+      // Scope check BEFORE any work. This message is broadcast to every frame
+      // because the content script is `allFrames: true`; without this guard a
+      // single planned click fired in the top document and in every same-origin
+      // iframe that happened to contain a matching element. [audit 0.2]
+      const decision = frameDecision(
+        { frameId: selfFrameId, isTop: isTopFrame() },
+        msg.targetFrameId === undefined ? null : { frameId: msg.targetFrameId, isTop: msg.targetFrameId === 0 },
+      )
+      if (!decision.execute) {
+        return {
+          ok: false,
+          action: String((msg.action as PlanAction | undefined)?.action ?? 'unknown'),
+          ms: 0,
+          effect: 'unchanged',
+          error: decision.reason,
+        }
+      }
+      return runAndReport(msg.runId, msg.actionIndex, msg.action as PlanAction)
+    }
     case 'content:confirm': {
       // Previously this returned {ok:true, confirmed:true} without doing
       // anything, so a user who approved a destructive step still saw the
@@ -766,11 +942,41 @@ async function handle(msg: VeilMessage): Promise<unknown> {
  *  in the page. The functions above are pure declarations.
  * ------------------------------------------------------------------ */
 
+/**
+ * This frame's id, as assigned by the service worker.
+ *
+ * A content script genuinely cannot discover its own `frameId` — the DOM has no
+ * such concept, and `window.top === window` only distinguishes top from
+ * nested, not one sibling iframe from another. So the SW announces it.
+ *
+ * Defaults to 0 (the top frame) so that a message arriving before the
+ * announcement — or on a page where the SW could not enumerate frames — still
+ * behaves correctly for the overwhelmingly common top-frame case. Frames
+ * execute ONLY when the plan names their id, so a wrong default can never
+ * cause a wrong-document click; at worst the action is skipped and reported.
+ */
+let selfFrameId = 0
+
+function isTopFrame(): boolean {
+  try {
+    return window.top === window
+  } catch {
+    // Cross-origin parent access throws, which itself proves we are nested.
+    return false
+  }
+}
+
 function start(): void {
   chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
     const msg = parseMessage(raw)
     if (!msg) {
       sendResponse({ ok: false, error: 'invalid message' })
+      return false
+    }
+    // Learn our frame id before deciding anything about scope.
+    if (msg.kind === 'frame:identify') {
+      selfFrameId = msg.frameId
+      sendResponse({ ok: true, frameId: selfFrameId })
       return false
     }
     void handle(msg).then(sendResponse).catch((e: unknown) => {

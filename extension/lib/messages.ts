@@ -39,13 +39,31 @@ export const CASCADE_BY_PRESSURE: Record<PressureState, { L0: boolean; L1: boole
 
 export const MessageSchema = z.discriminatedUnion('kind', [
   // panel → SW
-  z.object({ kind: z.literal('panel:run'), intent: z.string().max(2000), tier: z.enum(['T0', 'T1', 'T2']).default('T1') }),
+  z.object({ kind: z.literal('panel:run'), intent: z.string().max(2000), tier: z.enum(['T0', 'T1', 'T2']).default('T1'), /**
+   * Begin a NEW session instead of continuing the current one. Continuing is the
+   * default because that is what enables delta tiles: turn 2+ of one session can
+   * ship only the dirty regions, since the server still holds turn 1's frame.
+   */
+  fresh: z.boolean().optional() }),
   z.object({ kind: z.literal('panel:cancel'), runId: z.string() }),
   z.object({ kind: z.literal('panel:explain'), redactionId: z.string() }),
 
   // SW → content
   z.object({ kind: z.literal('content:snapshot'), runId: z.string() }),
-  z.object({ kind: z.literal('content:execute'), runId: z.string(), action: z.unknown() }),
+  /**
+   * `actionIndex` is REQUIRED, not optional. The executor reported against a
+   * hardcoded `0` for every step of every plan, so `execute:done` — once it was
+   * sent at all — could only ever describe step 0. The panel needs the real
+   * index to mark the right row.
+   */
+  /**
+   * `targetFrameId` scopes EXECUTION to a single frame. The content script is
+   * registered `allFrames: true` (required for redaction to see into iframes),
+   * so without this an action broadcast to every frame and one planned click
+   * fired in all of them. Perception still fans out; only execution is scoped.
+   * Absent means "no frame claimed it", which executes nowhere — fail safe.
+   */
+  z.object({ kind: z.literal('content:execute'), runId: z.string(), actionIndex: z.number().int().nonnegative(), targetFrameId: z.number().int().nonnegative().optional(), action: z.unknown() }),
   z.object({
     kind: z.literal('content:confirm'),
     runId: z.string(),
@@ -105,9 +123,28 @@ export const MessageSchema = z.discriminatedUnion('kind', [
       )
       .optional(),
   }),
-  z.object({ kind: z.literal('execute:done'), runId: z.string(), actionIndex: z.number().int(), ok: z.boolean(), status: z.string(), ms: z.number() }),
+  /**
+   * `status` carries the OBSERVED effect, not the verb that was attempted —
+   * `status: 'click'` on a click that changed nothing is exactly the false
+   * success this replaced. One of: confirmed | changed | unchanged | unknown.
+   */
+  z.object({
+    kind: z.literal('execute:done'),
+    runId: z.string(),
+    actionIndex: z.number().int().nonnegative(),
+    ok: z.boolean(),
+    status: z.string(),
+    ms: z.number(),
+  }),
   z.object({ kind: z.literal('execute:confirm_required'), runId: z.string(), actionIndex: z.number().int(), label: z.string() }),
   z.object({ kind: z.literal('frame:crossorigin'), frameId: z.string() }),
+  /**
+   * SW → every frame, telling it its own `frameId`. A content script cannot
+   * discover this itself (the DOM has no frame id), and without it every frame
+   * would answer to the top-frame default and one action could execute in many
+   * documents at once.
+   */
+  z.object({ kind: z.literal('frame:identify'), frameId: z.number().int().nonnegative() }),
 
   // SW → offscreen
   z.object({ kind: z.literal('offscreen:init'), tabId: z.number(), reason: z.string() }),

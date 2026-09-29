@@ -13,6 +13,7 @@ import { defineBackground } from 'wxt/sandbox'
 import type { Msg, VeilMessage } from '@/lib/messages'
 import { parseMessage } from '@/lib/messages'
 import { parseActionPlan, parseManifest, ScreenStateSchema, SCHEMA_VERSION, type ActionPlan, type ScreenNode } from '@/lib/schema'
+import { runPlan, MAX_STEPS_PER_PLAN, type PlanStep, type StepDriver, type StepResult } from '@/lib/execution'
 
 /* ------------------------------------------------------------------ *
  *  Run state. Deliberately small and serializable — it is the ONLY
@@ -48,6 +49,8 @@ interface RunState {
    * carries placeholders, never raw values.
    */
   screenState: unknown
+  /** Frame ids discovered for this tab, so execution can be scoped to one. */
+  knownFrames: number[]
 }
 
 const runs = new Map<string, RunState>()
@@ -200,6 +203,44 @@ async function toContent(tabId: number, msg: VeilMessage): Promise<unknown> {
   }
 }
 
+/**
+ * Send to ONE frame, by id.
+ *
+ * A `sendMessage` without `frameId` is a broadcast. For execution that is the
+ * defect this replaces: every same-origin frame would resolve the mark against
+ * its own DOM and act. `options.frameId` makes the scope explicit.
+ */
+async function toFrame(tabId: number, frameId: number, msg: VeilMessage): Promise<unknown> {
+  try {
+    return await chrome.tabs.sendMessage(tabId, msg, { frameId })
+  } catch {
+    return { blocked: true }
+  }
+}
+
+/**
+ * Tell every frame in the tab what its own `frameId` is.
+ *
+ * Runs before each snapshot so a newly-inserted iframe is known even if it was
+ * not present at injection time. Frames that cannot be reached (cross-origin,
+ * CSP-blocked) simply do not answer, which is correct — they are treated as
+ * opaque by the redaction cascade.
+ */
+async function identifyFrames(tabId: number): Promise<number[]> {
+  let frames: chrome.webNavigation.GetAllFrameResultDetails[] = []
+  try {
+    const got = (await chrome.webNavigation?.getAllFrames({ tabId })) ?? []
+    frames = got
+  } catch {
+    // webNavigation is not granted; fall back to the top frame only, which is
+    // the safe direction: actions stay in the main document.
+    frames = []
+  }
+  const ids = frames.length > 0 ? frames.map((f) => f.frameId) : [0]
+  await Promise.all(ids.map((frameId) => toFrame(tabId, frameId, { kind: 'frame:identify', frameId })))
+  return ids
+}
+
 async function toOffscreen(msg: VeilMessage): Promise<unknown> {
   return chrome.runtime.sendMessage(msg)
 }
@@ -212,9 +253,12 @@ async function toOffscreen(msg: VeilMessage): Promise<unknown> {
 async function handle(msg: VeilMessage): Promise<unknown> {
   switch (msg.kind) {
     case 'panel:run':
-      return startRun(msg.intent, msg.tier)
-    case 'content:execute':
-      return executeStep(msg.runId, msg.action)
+      return startRun(msg.intent, msg.tier, msg.fresh)
+    // `content:execute` is SW → content. The content script never originates it,
+    // so handling it here was a loop-back path that re-broadcast a message the
+    // SW had itself sent — and it broadcast to every frame, which is how a
+    // single action could fan out. Execution is driven solely by the
+    // `runPlan` driver, which addresses exactly one frame.
     case 'content:confirm':
       return confirmStep(msg.runId, msg.actionIndex, msg.approved !== false)
     case 'snapshot:ready':
@@ -236,15 +280,33 @@ async function handle(msg: VeilMessage): Promise<unknown> {
   }
 }
 
-async function startRun(intent: string, tier: 'T0' | 'T1' | 'T2'): Promise<unknown> {
+/**
+ * The active session, so a follow-up turn can continue it.
+ *
+ * `run.turn` was hardcoded to 0 and never incremented, which made the delta-tile
+ * gate `run.turn > 1` permanently false. But incrementing it alone would have
+ * been a lie of a different kind: `startRun` minted a brand new `sessionId` on
+ * every invocation, so a session could only ever hold one turn, and the server
+ * would have rejected any tiled turn as belonging to no prior frame.
+ *
+ * Delta tiles are only meaningful when the server already holds the previous
+ * frame of the SAME session — so multi-turn is the feature, not a detail.
+ */
+let activeSession: { sessionId: string; turn: number } | null = null
+
+async function startRun(intent: string, tier: 'T0' | 'T1' | 'T2', fresh = false): Promise<unknown> {
   const runId = newId('run')
-  const sessionId = newId('sess')
+  // Continue the current session unless this is a fresh start. `fresh` is set
+  // by the panel's "New conversation" control.
+  const sessionId = fresh || !activeSession ? newId('sess') : activeSession.sessionId
+  const turn = fresh || !activeSession ? 0 : activeSession.turn
+
   const run: RunState = {
     runId,
     sessionId,
     intent,
     tier,
-    turn: 0,
+    turn,
     deltaTurns: 0,
     startedAt: now(),
     stage: 'snapshot',
@@ -252,8 +314,10 @@ async function startRun(intent: string, tier: 'T0' | 'T1' | 'T2'): Promise<unkno
     bytesOut: 0,
     pendingFrameBytes: 0,
     screenState: null,
+    knownFrames: [0],
   }
   runs.set(runId, run)
+  activeSession = { sessionId, turn }
 
   const tabId = await activeTabId()
   await ensureOffscreen(tabId)
@@ -261,6 +325,9 @@ async function startRun(intent: string, tier: 'T0' | 'T1' | 'T2'): Promise<unkno
   // 1. DOM channel. The content script builds the pruned snapshot, assigns
   //    marks, and runs L0/L1 — all in-page, all local.
   const t0 = now()
+  // Announce frame ids BEFORE the snapshot, so every frame knows its own scope
+  // before any action can be dispatched to it.
+  run.knownFrames = await identifyFrames(tabId)
   await toContent(tabId, { kind: 'content:snapshot', runId })
   stage(runId, 'snapshot', now() - t0)
 
@@ -440,11 +507,22 @@ async function onRedactReady(msg: Extract<VeilMessage, { kind: 'redact:ready' }>
   const result = await callServer(body, run)
   stage(run.runId, 'server', now() - t0)
 
+  // Advance the turn for the NEXT request. Until this existed, `turn` stayed 0
+  // for the life of the session, so the `turn > 1` delta gate could never open
+  // and the composer's tile path was dead code that had never once run.
+  run.turn += 1
+  if (activeSession && activeSession.sessionId === run.sessionId) {
+    activeSession.turn = run.turn
+  }
+
   // 4. EXECUTE THE PLAN. This step did not exist: the plan was parsed, sent to
   //    the side panel, and then nothing happened — the agent observed but never
   //    acted. [audit 0.2]
   if (result.ok && result.plan) {
-    await executePlan(run.runId, result.plan)
+    // The top frame by default. A mark that lives in a subframe would need the
+    // server to name it; until it does, acting in the main document is the
+    // scoped-and-safe choice rather than a broadcast.
+    await executePlan(run.runId, result.plan, 0)
   }
   return result
 }
@@ -454,66 +532,109 @@ async function onRedactReady(msg: Extract<VeilMessage, { kind: 'redact:ready' }>
  * ------------------------------------------------------------------ */
 
 /** Steps that must be handed to the human rather than run automatically. */
-const NEEDS_HUMAN = new Set(['ask_user'])
 
 /**
  * Run a plan in order, awaiting each step.
  *
- * Ordering matters: `wait_for` before a click that depends on it, and a
- * destructive step must stop and ask rather than proceed. An `ask_user` step
- * halts the run and waits for a `content:confirm`, because silently skipping
- * it would be worse than not running at all.
+ * The loop itself now lives in `lib/execution.ts` as a pure function over a
+ * `StepDriver`, because every branch of it used to be untestable — which is
+ * how `ok` came to be destructured and then ignored, so a failed step advanced
+ * the plan exactly like a successful one, and how the confirmation path came to
+ * be unreachable.
+ *
+ * This function is only the transport: it knows how to reach the page and the
+ * panel, and nothing about policy.
  */
-async function executePlan(runId: string, plan: ActionPlan): Promise<{ executed: number; halted: number }> {
+async function executePlan(
+  runId: string,
+  plan: ActionPlan,
+  targetFrameId = 0,
+): Promise<{ executed: number; halted: number }> {
   const tabId = await activeTabId()
-  let executed = 0
-  let halted = 0
 
-  for (let i = 0; i < plan.steps.length; i++) {
-    const step = plan.steps[i]!
-    const action = String(step.action)
-
-    if (action === 'none') break // the model declined; nothing after it matters
-    if (action === 'wait_for') {
-      await sleep(Math.min(3000, Number(step.amount ?? 300)))
-      continue
-    }
-    if (NEEDS_HUMAN.has(action)) {
-      halted++
-      sendToPanel({
-        kind: 'panel:answer',
+  const driver: StepDriver = {
+    async run(index: number, step: PlanStep): Promise<StepResult> {
+      // Address exactly one frame. `toContent` here would broadcast.
+      const res = await toFrame(tabId, targetFrameId, {
+        kind: 'content:execute',
         runId,
-        text: step.reason ?? 'This step needs your confirmation.',
-        tier: 'confirm',
+        actionIndex: index,
+        targetFrameId,
+        action: step,
       })
-      const confirmed = await waitForConfirmation(runId, i, tabId, step.reason ?? 'Confirm this step?')
-      if (!confirmed) {
-        sendToPanel({ kind: 'panel:error', runId, message: 'Cancelled at your request.' })
-        break
-      }
-      // Confirmed: fall through and execute the step that was held back.
-    }
+      return normalizeStepResult(res)
+    },
+    async ask(index: number, reason: string): Promise<boolean> {
+      // This is the function that used to be missing. The confirm card is
+      // rendered by the panel from `execute:confirm_required`, and the panel
+      // answers with `content:confirm`, which lands in `confirmations` — the
+      // map `waitForConfirmation` polls. With the content script now emitting
+      // `execute:confirm_required`, all four links are connected.
+      sendToPanel({ kind: 'panel:stage', runId, stage: `waiting for you: ${reason}`, ms: 0 })
+      return waitForConfirmation(runId, index, tabId, reason)
+    },
+  }
 
-    const res = await toContent(tabId, { kind: 'content:execute', runId, action: step })
-    const r = res as { ok?: boolean; needsConfirm?: boolean; reason?: string } | undefined
-    if (r && r.needsConfirm) {
-      halted++
-      sendToPanel({ kind: 'panel:answer', runId, text: r.reason ?? 'Confirmation needed.', tier: 'confirm' })
-      const ok = await waitForConfirmation(runId, i, tabId, r.reason ?? 'Confirm this step?')
-      if (!ok) {
-        sendToPanel({ kind: 'panel:error', runId, message: 'Cancelled at your request.' })
-        break
-      }
-      const again = await toContent(tabId, { kind: 'content:execute', runId, action: step })
-      void again
+  const res = await runPlan({ steps: plan.steps as PlanStep[] }, driver)
+
+  // Report what actually happened. A run that stopped early must say so.
+  for (const ev of res.events) {
+    if (ev.type === 'failed') {
+      sendToPanel({ kind: 'panel:error', runId, message: `Step ${ev.index + 1} failed: ${ev.reason}` })
+    } else if (ev.type === 'declined') {
+      sendToPanel({ kind: 'panel:error', runId, message: 'Stopped — you declined that step.' })
+    } else if (ev.type === 'capped') {
+      sendToPanel({
+        kind: 'panel:error',
+        runId,
+        message: `Plan had ${ev.requested} steps; ran the first ${ev.ran}.`,
+      })
     }
-    executed++
   }
 
   stage(runId, 'execute', 0)
   const run = runs.get(runId)
-  if (run) run.stage = 'done'
-  return { executed, halted }
+  if (run) run.stage = res.ok ? 'done' : 'aborted'
+  return { executed: res.executed, halted: res.halted }
+}
+
+/**
+ * Coerce whatever the content script replied with into an honest StepResult.
+ *
+ * A missing port (`{blocked:true}` — the page is chrome:// or refused
+ * injection) is a FAILURE. It used to flow through as an object with no `ok`
+ * field, which the loop then treated as fine.
+ */
+function normalizeStepResult(res: unknown): StepResult {
+  if (!res || typeof res !== 'object') {
+    return { ok: false, action: 'unknown', effect: 'unchanged', error: 'the page did not respond' }
+  }
+  const r = res as Partial<StepResult> & { blocked?: boolean }
+  if (r.blocked) {
+    return {
+      ok: false,
+      action: String(r.action ?? 'unknown'),
+      effect: 'unchanged',
+      error: 'this page does not allow the agent to act on it',
+    }
+  }
+  if (typeof r.ok !== 'boolean') {
+    return {
+      ok: false,
+      action: String(r.action ?? 'unknown'),
+      effect: 'unknown',
+      error: 'the page did not report a result',
+    }
+  }
+  return {
+    ok: r.ok,
+    action: String(r.action ?? 'unknown'),
+    ms: typeof r.ms === 'number' ? r.ms : 0,
+    needsConfirm: r.needsConfirm === true,
+    reason: r.reason,
+    error: r.error,
+    effect: r.effect,
+  }
 }
 
 /** Poll for the user's confirmation, bounded so a run can never hang forever. */
@@ -609,11 +730,6 @@ function flattenScreenText(node: ScreenNode, depth = 0, out: string[] = []): str
   if (node.value) out.push(node.value)
   for (const child of node.children ?? []) flattenScreenText(child, depth + 1, out)
   return out.join('\n')
-}
-
-async function executeStep(runId: string, action: unknown): Promise<unknown> {
-  const tabId = await activeTabId()
-  return toContent(tabId, { kind: 'content:execute', runId, action })
 }
 
 /**
