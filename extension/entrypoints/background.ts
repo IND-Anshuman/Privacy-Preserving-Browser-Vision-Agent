@@ -14,6 +14,7 @@ import type { Msg, VeilMessage } from '@/lib/messages'
 import { parseMessage } from '@/lib/messages'
 import { parseActionPlan, parseManifest, ScreenStateSchema, SCHEMA_VERSION, type ActionPlan, type ScreenNode } from '@/lib/schema'
 import { runPlan, MAX_STEPS_PER_PLAN, type PlanStep, type StepDriver, type StepResult } from '@/lib/execution'
+import { parsePlanStream } from '@/lib/sse'
 
 /* ------------------------------------------------------------------ *
  *  Run state. Deliberately small and serializable — it is the ONLY
@@ -56,6 +57,22 @@ interface RunState {
 const runs = new Map<string, RunState>()
 const SERVER_DEFAULT = 'http://127.0.0.1:8000'
 
+/**
+ * Server timeout, from a measurement rather than a round number.
+ *
+ * `bench/compare_models.py` measured the configured model at p50 15.7s and
+ * p95 24.8s. The previous hardcoded 20s therefore aborted a MAJORITY of real
+ * turns mid-plan and surfaced as a bare "network error" — indistinguishable
+ * from the server being down. The default is the measured p95 plus a margin,
+ * and a user on a different model can raise it in the panel's settings.
+ */
+const SERVER_TIMEOUT_DEFAULT_MS = 45_000
+let serverTimeoutOverrideMs: number | null = null
+
+function serverTimeoutMs(): number {
+  return serverTimeoutOverrideMs ?? SERVER_TIMEOUT_DEFAULT_MS
+}
+
 let serverOrigin = SERVER_DEFAULT
 let offscreenReady = false
 
@@ -65,9 +82,14 @@ let offscreenReady = false
  * ------------------------------------------------------------------ */
 
 async function loadConfig(): Promise<void> {
-  const got = await chrome.storage.local.get(['serverOrigin'])
+  const got = await chrome.storage.local.get(['serverOrigin', 'serverTimeoutMs'])
   const v = got['serverOrigin']
   if (typeof v === 'string' && /^https?:\/\//.test(v)) serverOrigin = v.replace(/\/$/, '')
+  // The server's own budget is VEIL_LLM_TIMEOUT_S (default 90s). The client must
+  // not be the tighter of the two, or it aborts a turn the server was still
+  // legitimately planning.
+  const t = got['serverTimeoutMs']
+  if (typeof t === 'number' && t >= 5_000 && t <= 600_000) serverTimeoutOverrideMs = t
 }
 
 /* ------------------------------------------------------------------ *
@@ -696,7 +718,12 @@ async function callServer(
   run: RunState,
 ): Promise<{ ok: boolean; plan?: ActionPlan; error?: string }> {
   const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), 20_000)
+  // Derived from a measurement, not a guess. `bench/compare_models.py`
+  // measured the configured model (Qwen3-VL-32B) at p50 15.7s / p95 24.8s, so
+  // the old hardcoded 20s aborted a majority of real turns mid-plan and
+  // reported "network error". The budget is the measured p95 with headroom,
+  // and it is overridable because a different model has a different tail.
+  const t = setTimeout(() => ctrl.abort(), serverTimeoutMs())
   try {
     const res = await fetch(`${serverOrigin}/v1/agent/step`, {
       method: 'POST',
@@ -705,8 +732,25 @@ async function callServer(
       signal: ctrl.signal,
     })
     if (!res.ok) return { ok: false, error: `server ${res.status}` }
-    const text = await res.text()
-    const plan = parseActionPlan(JSON.parse(text))
+
+    // The server answers with `text/event-stream`, so `res.text()` is a
+    // `data: {...}` transcript, not JSON. This used to do
+    // `JSON.parse(await res.text())`, which threw on EVERY turn — the catch
+    // swallowed it and the run finished with no plan, so no server plan had
+    // ever actually executed in the extension. parsePlanStream also handles
+    // the escalation gate re-streaming a complete replacement plan.
+    const raw = await res.text()
+    const stream = parsePlanStream(raw)
+    if (!stream.ok || stream.text === undefined) {
+      return { ok: false, error: stream.error ?? 'could not read the plan' }
+    }
+
+    let plan: ActionPlan
+    try {
+      plan = parseActionPlan(JSON.parse(stream.text))
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'invalid plan' }
+    }
     run.stage = 'execute'
     sendToPanel({ kind: 'panel:plan', runId: run.runId, plan })
     return { ok: true, plan }

@@ -43,7 +43,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # ModuleNotFoundError for a module that plainly exists. So the fallback is
 # guarded on the symptom, and the original error is printed.
 try:
-    from .actions import ActionPlan, validate_plan
+    from .actions import ActionPlan, check_plan_against_state, validate_plan
     from .prompts import build_system_preamble
     from .providers import PlanRequest, ProviderUnavailable, Router
     from .session import DEFAULT_MAX_ATTEMPTS, SessionStore
@@ -656,6 +656,26 @@ def _apply_escalation_gate(
 
     if sess.exhausted():
         reasons.append(f"reached the {DEFAULT_MAX_ATTEMPTS}-attempt cap for this task")
+
+    # PLAN-vs-STATE. `check_plan_against_state` was written, unit-tested in
+    # bench/test_server.py, and then never called from anywhere in the live
+    # path — so a plan naming a mark that does not exist on this page, or
+    # filling a sensitive field, sailed straight through to the extension. The
+    # client re-resolves marks and refuses a lost one, but a plan that fills a
+    # field the model mistook for a password field was never caught at all.
+    #
+    # This is the one place every plan passes through, so it is the right place
+    # for the check. Failures become an ask_user rather than an exception: a
+    # wrong-but-parseable plan should stop and ask, not 500.
+    try:
+        state_problems = check_plan_against_state(
+            plan, req.screen_state.model_dump(mode="json")
+        )
+    except Exception as exc:  # noqa: BLE001 — never let the gate itself 500 a turn
+        log.warning("plan-vs-state check failed to run: %s", exc)
+        state_problems = []
+    if state_problems:
+        reasons.extend(state_problems)
 
     if not reasons:
         # `steps` holds typed ActionStep models, not dicts. Reaching for .get()
