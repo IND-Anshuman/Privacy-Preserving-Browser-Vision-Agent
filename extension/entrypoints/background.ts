@@ -81,7 +81,24 @@ function flushLog(): void {
 }
 
 const watchdog = newWatchdog({
-  timeoutMs: DEFAULT_RUN_TIMEOUT_MS,
+  // A rewind is a call-ordering bug. Log it rather than silently swallowing it,
+  // because the symptom (a stall named after a finished stage) is otherwise
+  // indistinguishable from a real hang.
+  onRewind: (runId, from, to) => {
+    log('sw', `run ${runId} stage went backwards: ${from} -> ${to} (ignored)`, 'warn')
+    flushLog()
+  },
+  // NO `timeoutMs` HERE, AND THAT IS THE POINT.
+  //
+  // It used to pass `DEFAULT_RUN_TIMEOUT_MS` (45s), and arm() resolves the
+  // budget as `opts.timeoutMs ?? stageTimeoutMs(stage)` — so the override
+  // always won and the entire STAGE_TIMEOUT_MS table was dead code in
+  // production. Every stage got a flat 45s, which is exactly the behaviour
+  // the table was added to fix: the trace showed a run stalling in "snapshot"
+  // while it was really waiting on a ~13-19s network turn.
+  //
+  // A passing test suite did not catch it because the table tests construct
+  // their own RunWatchdog without the override. The wiring was never tested.
   onExpire: (stalled) => {
     // The run object is gone (that is WHY we are here), so this cannot mark
     // it aborted. It only has to make sure the panel is told.
@@ -446,7 +463,22 @@ async function startRun(intent: string, tier: 'T0' | 'T1' | 'T2', fresh = false)
   stageDeadline.begin(runId, 'snapshot', STAGE_SNAPSHOT_MS, (st: string) => onStageTimeout(runId, st))
 
   const snap = await toContent(tabId, { kind: 'content:snapshot', runId })
-  stage(runId, 'snapshot', now() - t0)
+
+  // Report the timing, but DO NOT REWIND THE WATCHDOG.
+  //
+  // The whole onSnapshotReady handler runs INSIDE the await above, because the
+  // content script awaits its own `snapshot:ready` before returning. So by the
+  // time we get here the pipeline may already be at 'capture+redact' or
+  // 'send'. Calling stage(runId,'snapshot',...) at this point moved the
+  // watchdog BACKWARDS to a stage that had already finished, which is how a
+  // run stalled in "snapshot" 45s after the snapshot had completed in 44ms —
+  // the trace showed `capture+redact 2ms` printed BEFORE `snapshot 44ms`.
+  //
+  // The timing line is still worth printing; only the re-arm is wrong.
+  const snapMs = now() - t0
+  log('sw', `snapshot ${snapMs.toFixed(0)}ms`, 'info')
+  flushLog()
+  sendToPanel({ kind: 'panel:stage', runId, stage: 'snapshot', ms: snapMs })
 
   // `toContent` returns `{blocked:true}` when there is no content script on
   // the tab, and this used to be ignored — so the run reported a 2ms
@@ -697,7 +729,18 @@ async function onRedactReady(msg: Extract<VeilMessage, { kind: 'redact:ready' }>
   }
 
   const result = await callServer(body, run)
-  stage(run.runId, 'server', now() - t0)
+  // NOT stage(...,'server'). That name was never in STAGE_TIMEOUT_MS, so it
+  // both reset the budget to the 45s default and, being unknown to
+  // PIPELINE_ORDER, was treated as the furthest-along position — silently
+  // discarding the 60s 'send' budget set moments earlier.
+  // The network turn IS 'send'. Report the elapsed time without renaming it.
+  const serverMs = now() - t0
+  log('sw', `server ${serverMs.toFixed(0)}ms`, 'info')
+  flushLog()
+  // Sent as a stage ONLY so the panel's waterfall shows the network time. It
+  // must not re-arm the watchdog: 'server' is not a stage, and an unknown name
+  // resets the budget to the 45s default. The stage remains 'send'.
+  sendToPanel({ kind: 'panel:stage', runId: run.runId, stage: 'send', ms: serverMs })
 
   // Advance the turn for the NEXT request. Until this existed, `turn` stayed 0
   // for the life of the session, so the `turn > 1` delta gate could never open

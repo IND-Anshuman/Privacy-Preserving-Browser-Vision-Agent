@@ -578,6 +578,17 @@ open directly; `bench/l3_canvas.html` is self-contained.
 
 ## Honest failure notes
 
+- **The per-stage deadline table was dead code in production.** Three
+  independent causes, all found from a pasted trace where `capture+redact 2ms`
+  printed *before* `snapshot 44ms` — a pipeline finishing stage 3 before stage 1
+  reports. (a) `onSnapshotReady` runs *inside* `await toContent(...)`, so its
+  stage fired before the snapshot's own; `begin()` now refuses a rewind. (b)
+  `newWatchdog({timeoutMs: 45_000})` made `arm()`'s `opts.timeoutMs ??` always
+  win, so every stage got the flat 45 s the table was meant to replace — the
+  table's tests passed because they built their own watchdog. (c) Two stage
+  names (`capture+redact`, `server`) were emitted but existed in neither
+  table, silently falling back to 45 s. `tests/stage-names.test.ts` now
+  cross-checks every emitted name against both tables.
 - **The DOM deadline was armed after the work it watched, so it fired on
   healthy runs.** The content script answers `content:snapshot` by awaiting its
   own `snapshot:ready` before returning, so that event is handled *inside* the

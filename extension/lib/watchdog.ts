@@ -65,6 +65,33 @@ export interface WatchdogOptions {
    */
   timeoutMs?: number
   onExpire: (run: StalledRun) => void
+  /** A stage was reported out of order. Diagnostic only. */
+  onRewind?: (runId: string, from: string, to: string) => void
+}
+
+/**
+ * The order stages must be reported in.
+ *
+ * Deliberately not alphabetical and not arbitrary: this is the order the
+ * pipeline executes them, which is the only order in which "the run is at
+ * stage X" is a true statement.
+ */
+export const PIPELINE_ORDER: readonly string[] = Object.freeze([
+  'snapshot',
+  'capture+redact',
+  'redact',
+  'send',
+  'execute',
+  'done',
+  'aborted',
+])
+
+/** Terminal stages sort last so nothing can follow them. */
+function orderIndex(stage: string): number {
+  const i = PIPELINE_ORDER.indexOf(stage)
+  // An unknown stage is not a rewind — refusing it would silently swallow a
+  // legitimate new stage. Treat it as the current position.
+  return i === -1 ? PIPELINE_ORDER.length : i
 }
 
 /**
@@ -107,6 +134,12 @@ export const STAGE_TIMEOUT_MS: Readonly<Record<string, number>> = Object.freeze(
   snapshot: 8_000,
   /** Frame capture + compositor setup. GPU-bound, no network. */
   capture: 15_000,
+  /**
+   * The name the pipeline actually emits. It was absent from this table, so it
+   * fell back to the 45s default — which is why a run that hung during capture
+   * got a 45s wait, the same as a network turn.
+   */
+  'capture+redact': 15_000,
   /** L0/L1 + optional L2/L3. Warm L3 measured ~632ms; allow for model load. */
   redact: 30_000,
   /** The remote T1 turn. Measured p50 13.00s, p95 18.94s, one 74s stall. */
@@ -146,6 +179,29 @@ export class RunWatchdog {
       // wedged run that keeps emitting would otherwise hold the panel
       // hostage forever, reintroducing the hang this exists to prevent.
       if (this.current.stage === stage) return
+
+      // A REWIND IS REFUSED.
+      //
+      // The user pasted this trace:
+      //   capture+redact 2ms
+      //   snapshot 44ms
+      //   run ... stalled in "snapshot" after 45s
+      //
+      // Stages are emitted from inside an await: the content script answers
+      // `content:snapshot` by awaiting its own `snapshot:ready`, so the whole
+      // onSnapshotReady handler — including its stage('capture+redact') —
+      // runs BEFORE startRun resumes and reports 'snapshot'. The last stage
+      // reported was therefore one that had already finished, and a 13-19s
+      // network turn was reported as a "snapshot" stall.
+      //
+      // A stage can only move forward. If a caller reports an earlier stage
+      // than the run has already reached, that is a bug in the call ordering
+      // — silently honouring it makes the watchdog name the wrong stage, which
+      // is the whole failure being fixed.
+      if (orderIndex(stage) < orderIndex(this.current.stage)) {
+        this.opts.onRewind?.(this.current.runId, this.current.stage, stage)
+        return
+      }
       // Same run, ADVANCED stage. Re-arm, because the new stage is a different
       // kind of work with a different budget. Not restarting here is what made
       // the network turn inherit the snapshot's already-spent 45s.
