@@ -578,6 +578,17 @@ open directly; `bench/l3_canvas.html` is self-contained.
 
 ## Honest failure notes
 
+- **`snapshot 2ms` is a FAILURE, not a fast success.** A real DOM walk of a
+  page with fifty elements cannot take 2 ms; what takes 2 ms is
+  `chrome.tabs.sendMessage` *rejecting*, because no content script is
+  listening. `toContent()` catches that and returns `{blocked:true}` — the
+  execution path checked that field, the snapshot path never did, so a run
+  reported a successful 2 ms snapshot and then sat waiting for a `snapshot:ready`
+  that could never arrive. The cause was knowable synchronously; the user
+  waited 45 s to be told it. A blocked snapshot is now a hard stop with a cause
+  the user can act on, and the DOM channel carries its own 8 s deadline,
+  separate from the 45 s run watchdog — the run budget has to accommodate a
+  ~13 s network turn, which is the wrong budget for a local page walk.
 - **L2 does not improve F1.** It ships for PERSON only, and the cascade-delta
   table has a second column of zeroes on purpose. Claiming otherwise would be
   the easy lie.

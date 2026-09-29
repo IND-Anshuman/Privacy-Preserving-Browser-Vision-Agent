@@ -17,6 +17,7 @@ import { runPlan, MAX_STEPS_PER_PLAN, type PlanStep, type PlanRunResult, type St
 import { parsePlanStream } from '@/lib/sse'
 import { LogRing, createLogger, persistRing, restoreRing, type LogChannel } from '@/lib/logging'
 import { newWatchdog, describeRunError, DEFAULT_RUN_TIMEOUT_MS, isTerminalStage } from '@/lib/watchdog'
+import { isBlockedResult, snapshotFailure } from '@/lib/pipe'
 
 /* ------------------------------------------------------------------ *
  *  Run state. Deliberately small and serializable — it is the ONLY
@@ -192,6 +193,7 @@ function sendToPanel(msg: VeilMessage): void {
   // run is the one place the watchdog must always be stopped.
   if (msg.kind === 'panel:error' || msg.kind === 'panel:plan' || msg.kind === 'panel:answer') {
     watchdog.finish(msg.runId)
+    clearStageDeadline(msg.runId)
   }
   void chrome.runtime.sendMessage(msg).catch(() => {
     // The panel may not be open. Swallowing this is correct: a missing
@@ -406,10 +408,84 @@ async function startRun(intent: string, tier: 'T0' | 'T1' | 'T2', fresh = false)
   // Announce frame ids BEFORE the snapshot, so every frame knows its own scope
   // before any action can be dispatched to it.
   run.knownFrames = await identifyFrames(tabId)
-  await toContent(tabId, { kind: 'content:snapshot', runId })
+
+  const snap = await toContent(tabId, { kind: 'content:snapshot', runId })
   stage(runId, 'snapshot', now() - t0)
 
+  // `toContent` returns `{blocked:true}` when there is no content script on
+  // the tab, and this used to be ignored — so the run reported a 2ms
+  // successful snapshot and then sat waiting for a `snapshot:ready` that could
+  // never arrive, until the 45s watchdog reported the stall. The cause was
+  // knowable synchronously; the user waited 45s to be told it.
+  //
+  // A blocked snapshot is a hard stop, not a fallback: sending a frame we
+  // could not read would mean sending pixels we never redacted.
+  if (isBlockedResult(snap)) {
+    let url: string | undefined
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      url = tab?.url
+    } catch {
+      /* the tab is gone; the message below still stands */
+    }
+    const { reason, message } = snapshotFailure(url)
+    run.stage = 'aborted'
+    watchdog.finish(runId)
+    log('sw', `run ${runId} snapshot blocked (${reason}) url=${(url ?? '').slice(0, 60)}`, 'error')
+    flushLog()
+    sendToPanel({ kind: 'panel:error', runId, message })
+    return { ok: false, error: message, reason }
+  }
+
+  // The content script replied, so it IS present — but it may still fail to
+  // send `snapshot:ready` (an exception mid-walk, or an opaque-frame scan that
+  // never returns). The blocked check above cannot see that, and the general
+  // watchdog is 45s, so give the DOM channel its own short deadline. A real
+  // snapshot of a large page is well under a second.
+  armStageDeadline(runId, 'snapshot', STAGE_SNAPSHOT_MS)
+
   return { ok: true, runId, sessionId }
+}
+
+/**
+ * A per-stage deadline, separate from the run watchdog.
+ *
+ * A run watchdog has to allow for the slow stage — the network turn measures
+ * p50 ~13s and p95 ~19s. That budget is wildly wrong for the DOM snapshot,
+ * which is a local walk of the page. One shared deadline means either the
+ * snapshot hangs for 45 seconds waiting to be called slow, or it is given so
+ * little time that a big page fails falsely. So the stages are budgeted apart.
+ */
+const STAGE_SNAPSHOT_MS = 8_000
+
+const stageDeadlines = new Map<string, ReturnType<typeof setTimeout>>()
+
+function armStageDeadline(runId: string, stageName: string, ms: number): void {
+  clearStageDeadline(runId)
+  stageDeadlines.set(
+    runId,
+    setTimeout(() => {
+      stageDeadlines.delete(runId)
+      const run = runs.get(runId)
+      if (!run || isTerminalStage(run.stage)) return
+      run.stage = 'aborted'
+      const message =
+        `Veil read the page for ${Math.round(ms / 1000)}s and got nothing back, so it stopped. ` +
+        `The page may be very large, or a script on it may be blocking the page's own handlers. ` +
+        `Nothing was sent. Reload the page and try again.`
+      log('sw', `run ${runId} ${stageName} stage timed out after ${ms}ms`, 'error')
+      flushLog()
+      sendToPanel({ kind: 'panel:error', runId, message })
+    }, ms),
+  )
+}
+
+function clearStageDeadline(runId: string): void {
+  const t = stageDeadlines.get(runId)
+  if (t !== undefined) {
+    clearTimeout(t)
+    stageDeadlines.delete(runId)
+  }
 }
 
 /**
@@ -421,6 +497,7 @@ async function onSnapshotReady(msg: Extract<VeilMessage, { kind: 'snapshot:ready
   if (!run) return { ok: false, error: 'unknown run' }
 
   // Parse on arrival. A malformed snapshot must never reach the server.
+  clearStageDeadline(msg.runId)
   run.screenState = ScreenStateSchema.parse(msg.screenState)
 
   run.stage = 'redact'
