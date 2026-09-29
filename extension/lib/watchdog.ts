@@ -276,9 +276,10 @@ export function describeRunError(run: StalledRun): string {
     // this with the worker alive and healthy, because the stage name was
     // stale. Naming a cause we cannot observe sends the reader after the wrong
     // problem — that cost one debugging round-trip on a real report.
-    `Nothing further was sent. The most common causes are the model taking ` +
-    `longer than its ${Math.round(stageTimeoutMs(run.stage) / 1000)}s budget for this ` +
-    `step, or the browser restarting the background worker while it was idle. ` +
+    `Nothing further was sent. The step that stalled was ` +
+    `**${run.stage}** (budget ${Math.round(stageTimeoutMs(run.stage) / 1000)}s). ` +
+    `The most common causes: the step took longer than its budget, or the ` +
+    `browser restarted the background worker while it was idle. ` +
     `Press Reload to try again — with a remote model, expect 10–20s per turn.`
   )
 }

@@ -556,31 +556,82 @@ async function onSnapshotReady(msg: Extract<VeilMessage, { kind: 'snapshot:ready
   stage(run.runId, 'capture+redact', now() - t0)
 
   // `runCapture` answers `{ok:false, aborted:true}` when the redaction gate
-  // could not verify coverage, and `toOffscreen` has no try/catch, so a
-  // missing offscreen document THROWS. Either way the return value used to be
-  // dropped on the floor and the run waited for a `redact:ready` that was
-  // never coming. This is the same defect as the un-checked `{blocked:true}`,
-  // one layer up, and it was equally silent.
-  if (isBlockedResult(res) || (res as { ok?: boolean })?.ok === false) {
-    const reason =
-      (res as { reason?: string; error?: string })?.reason ??
-      (res as { error?: string })?.error ??
-      'the redaction step did not complete'
-    run.stage = 'aborted'
-    watchdog.finish(msg.runId)
-    log('sw', `run ${msg.runId} capture/redact failed: ${reason}`, 'error')
-    flushLog()
-    sendToPanel({
-      kind: 'panel:error',
-      runId: msg.runId,
-      message:
-        `Veil stopped at the redaction step, so nothing was sent. (${reason}) ` +
-        `A frame that cannot be verified is never sent — that is the point of the gate.`,
-    })
-    return { ok: false, error: reason }
+    // could not verify coverage, and `toOffscreen` has no try/catch, so a
+    // missing offscreen document THROWS. It can also answer `{ok:true, skipped:true}`
+    // when the frame-diff gate reports "unchanged" — a valid result that used to
+    // be dropped, leaving the run stuck in 'capture+redact' until the watchdog
+    // fired at 15s. Either way the return value used to be dropped on the floor.
+    if (isBlockedResult(res) || (res as { ok?: boolean })?.ok === false) {
+      const reason =
+        (res as { reason?: string; error?: string })?.reason ??
+        (res as { error?: string })?.error ??
+        'the redaction step did not complete'
+      run.stage = 'aborted'
+      watchdog.finish(msg.runId)
+      log('sw', `run ${msg.runId} capture/redact failed: ${reason}`, 'error')
+      flushLog()
+      sendToPanel({
+        kind: 'panel:error',
+        runId: msg.runId,
+        message:
+          `Veil stopped at the redaction step, so nothing was sent. (${reason}) ` +
+          `A frame that cannot be verified is never sent — that is the point of the gate.`,
+      })
+      return { ok: false, error: reason }
+    }
+
+    // A 'skipped' result means the frame-diff gate found no changes. The page is
+    // static, so there is nothing new to send to the model — but the run must
+    // still advance and finish rather than sitting in 'capture+redact' forever.
+    if ((res as { skipped?: boolean })?.skipped) {
+      // For T0 we answer locally. For T1 we would send, but sending a duplicate
+      // frame when nothing changed is pointless — so we finish the run locally
+      // with an honest answer instead of asking the model about the same pixels.
+      if (run.tier === 'T0') {
+        // The local answer path is handled by onRedactReady, but we never reach it
+        // because the offscreen document short-circuits. So we synthesize the
+        // local answer here. The prompt API path still works for a new question
+        // on a static page; this is only about not re-sending unchanged pixels.
+        const screenText = run.screenState
+          ? flattenScreenText(ScreenStateSchema.parse(run.screenState).root)
+          : ''
+        const local = (await toOffscreen({
+                  kind: 'offscreen:local',
+                  runId: msg.runId,
+                  intent: run.intent,
+                  screenText,
+                })) as { ok: boolean; text?: string; source?: string; error?: string }
+
+                if (local?.ok && local.text) {
+                  sendToPanel({ kind: 'panel:answer', runId: msg.runId, text: local.text, tier: 'T0', source: local.source ?? 'prompt-api' })
+                } else {
+                  const why = local?.error ?? local?.source ?? 'no on-device model in this browser'
+                  sendToPanel({
+                    kind: 'panel:answer',
+                    runId: msg.runId,
+                    text: `Nothing changed since the last snapshot, and I can't answer on-device here — ${why}. ` +
+                      `Use the agent mode to send the redacted screen to your configured model.`,
+                    tier: 'T0',
+                    source: 'unavailable',
+                  })
+                }
+              } else {
+                // T1: no network turn when nothing changed. Report it honestly.
+                sendToPanel({
+                  kind: 'panel:answer',
+                  runId: msg.runId,
+                  text: `Nothing changed since the last snapshot. No network request was made — the frame-diff gate skipped the redundant frame. ` +
+                    `If you want to re-analyse the page, refresh it or ask a different question.`,
+                  tier: 'T1',
+                  source: 'gate-skipped',
+                })
+              }
+              stage(msg.runId, 'done', 0)
+      return { ok: true, skipped: true, tier: run.tier }
+    }
+
+    return res
   }
-  return res
-}
 
 async function onRedactReady(msg: Extract<VeilMessage, { kind: 'redact:ready' }>): Promise<unknown> {
   const run = runs.get(msg.runId)
