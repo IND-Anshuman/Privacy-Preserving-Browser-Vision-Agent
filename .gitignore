@@ -16,5 +16,9 @@ bench/l3rec_*.html
 # secrets: never commit the configured .env
 .env
 !.env.example
-extension/out-manual/
-extension/out-verify/
+
+# Extension build output. `extension/out-*/` is the escape hatch wxt.config.ts
+# exposes via VEIL_OUT_DIR, used when .output is locked on Windows — so the
+# pattern is a glob, not a fixed list, or a new build dir gets committed.
+extension/out-*/
+extension/.output/
