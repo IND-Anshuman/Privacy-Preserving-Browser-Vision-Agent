@@ -578,6 +578,21 @@ open directly; `bench/l3_canvas.html` is self-contained.
 
 ## Honest failure notes
 
+- **The DOM deadline was armed after the work it watched, so it fired on
+  healthy runs.** The content script answers `content:snapshot` by awaiting its
+  own `snapshot:ready` before returning, so that event is handled *inside* the
+  `await toContent(...)`. Arming the 8 s deadline after the await meant the
+  earlier `clearStageDeadline()` had run against a timer that did not exist
+  yet — so nothing cleared it, and it fired 8 s later on a run already at the
+  network turn, blaming "a very large page" for a page read in 37 ms. Arming
+  and clearing are now a `StageDeadline` object with one owner, and `begin()`
+  runs before the await.
+- **"server unreachable" was false.** `/health` resolves the provider
+  (measured p50 **2.91 s**, max **4.79 s**) and the panel aborted at **4000 ms**,
+  so a healthy server was reported as down — and the wording sent the user to
+  restart a server that did not need it. `GET /live` now answers "is the
+  server running?" without resolving anything (measured **28 ms**), and the
+  status line uses it.
 - **A stalled run was blamed on the wrong stage.** The pipeline had only two
   `stage()` calls (`snapshot`, `execute`), and the T1 path set
   `run.stage = 'send'` as a raw assignment — so the watchdog was still timing

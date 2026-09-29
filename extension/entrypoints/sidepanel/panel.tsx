@@ -27,6 +27,7 @@
 import { parseMessage, type VeilMessage } from '@/lib/messages'
 import type { ActionPlan, RedactionManifest } from '@/lib/schema'
 import { PASSWORD_TOKEN } from '@/lib/pseudonym'
+import { HEALTH_TIMEOUT_MS, LIVENESS_TIMEOUT_MS } from '@/lib/health'
 
 const $ = <T extends HTMLElement>(id: string): T | null => document.getElementById(id) as T | null
 
@@ -75,7 +76,19 @@ const state = {
    * `null` = not probed yet. Probed from /health, never from local run state,
    * because "the panel is idle" and "the server answers" are unrelated.
    */
-  health: null as null | { ok: boolean; detail?: string; provider?: string; model?: string },
+  /**
+   * `reachable` and `ok` are DIFFERENT facts and conflating them is what made
+   * the panel say "server unreachable (timeout)" about a running server.
+   *   reachable — did anything answer /live at all?
+   *   ok        — could it name a usable provider?
+   */
+  health: null as null | {
+    ok: boolean
+    reachable?: boolean
+    detail?: string
+    provider?: string
+    model?: string
+  },
   /**
    * Read from chrome.storage.local, the same place the SW reads it from, so
    * the panel probes the server the SW will actually call. A hardcoded default
@@ -485,8 +498,13 @@ function renderBusy(): void {
       // "trust me" and a readable proof of which model is answering.
       conn.textContent = `ready · ${state.health.provider}`
       conn.setAttribute('data-state', 'ready')
+    } else if (state.health.reachable === false) {
+      conn.textContent = 'server not running'
+      conn.setAttribute('data-state', 'error')
     } else {
-      conn.textContent = `server unreachable (${state.health.detail})`
+      // The server answered. Whatever failed was the PROVIDER, and saying
+      // "unreachable" here is what sent a user after the wrong process.
+      conn.textContent = `server up · ${state.health.detail}`
       conn.setAttribute('data-state', 'error')
     }
   }
@@ -494,7 +512,9 @@ function renderBusy(): void {
   if (hv && state.health) {
     hv.textContent = state.health.ok
       ? `${state.health.provider} · ${state.health.model ?? 'model unknown'}`
-      : `unreachable — ${state.health.detail}`
+      : state.health.reachable === false
+        ? `server not running — ${state.health.detail}`
+        : `server up · ${state.health.detail}`
   }
 }
 
@@ -506,15 +526,62 @@ function renderBusy(): void {
  * thing that ships data.
  */
 async function probeHealth(): Promise<void> {
-  const url = `${state.serverOrigin}/health`
+  // TWO QUESTIONS, TWO ENDPOINTS.
+  //
+  // "Is the server running?" is answered by /live, which resolves no provider
+  // and returns in well under a millisecond. "Which provider can it reach?" is
+  // /health, which probes the remote endpoint and measured p50 2.91s / max
+  // 4.79s.
+  //
+  // The panel was using /health for BOTH with a 4000ms timeout, so the status
+  // line inherited the provider's tail latency and clipped it — a user saw
+  // "server unreachable (timeout)" on a server that answered correctly a
+  // moment later. Worse, the wording told them the server was DOWN, so they
+  // restarted a healthy server and the actual problem went unexamined.
+  await probeLiveness()
+  await probeProvider()
+}
+
+/** Fast: does anything answer at all? */
+async function probeLiveness(): Promise<void> {
   try {
     const ctl = new AbortController()
-    const timer = setTimeout(() => ctl.abort(), 4000)
-    const res = await fetch(url, { signal: ctl.signal })
+    const timer = setTimeout(() => ctl.abort(), LIVENESS_TIMEOUT_MS)
+    const res = await fetch(`${state.serverOrigin}/live`, { signal: ctl.signal })
     clearTimeout(timer)
     if (!res.ok) {
-      state.health = { ok: false, detail: `HTTP ${res.status}` }
-      renderBusy()
+      state.health = { ok: false, detail: `HTTP ${res.status}`, reachable: true }
+      return
+    }
+    state.health = {
+      ok: state.health?.ok ?? false,
+      reachable: true,
+      detail: 'ok',
+      provider: state.health?.provider,
+      model: state.health?.model,
+    }
+  } catch (e) {
+    const aborted = e instanceof Error && e.name === 'AbortError'
+    state.health = {
+      ok: false,
+      reachable: false,
+      // An abort is not proof of absence. Say what was observed, not what is
+      // assumed: only a refused connection is actually "not running".
+      detail: aborted ? 'no response' : 'not running',
+    }
+  }
+}
+
+/** Slow, and honest about why: this one talks to the model provider. */
+async function probeProvider(): Promise<void> {
+  if (state.health && state.health.reachable === false) return // nothing to ask
+  try {
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), HEALTH_TIMEOUT_MS)
+    const res = await fetch(`${state.serverOrigin}/health`, { signal: ctl.signal })
+    clearTimeout(timer)
+    if (!res.ok) {
+      state.health = { ...(state.health ?? { ok: false }), ok: false, detail: `HTTP ${res.status}` }
       return
     }
     const j = (await res.json()) as { provider?: string | null; model?: string | null }
@@ -523,16 +590,22 @@ async function probeHealth(): Promise<void> {
     // itself — the server was honest and the panel should be too.
     state.health = {
       ok: true,
+      reachable: true,
       provider: j.provider ?? 'no provider configured',
       model: j.model ?? undefined,
+      detail: 'ok',
     }
   } catch (e) {
+    const aborted = e instanceof Error && e.name === 'AbortError'
+    // The server is alive (proven by /live); only the PROVIDER check timed out.
+    // Reporting this as "unreachable" would send the user to restart a server
+    // that does not need restarting.
     state.health = {
       ok: false,
-      detail: e instanceof Error && e.name === 'AbortError' ? 'timeout' : 'not running',
+      reachable: true,
+      detail: aborted ? 'provider check timed out' : 'provider check failed',
     }
   }
-  renderBusy()
 }
 
 function renderThread(): void {

@@ -226,3 +226,85 @@ export function describeRunError(run: StalledRun): string {
     `Press Reload to try again — with a remote model, expect 10–20s per turn.`
   )
 }
+
+/**
+ * A one-shot deadline for a single stage.
+ *
+ * WHY IT IS A SEPARATE OBJECT AND NOT A FLAG
+ * ------------------------------------------
+ * The first version of this was a boolean plus a timer in background.ts, and
+ * it fired on healthy runs. The cause was an ordering mistake, and the mistake
+ * was possible at all because arming and clearing were free-floating statements
+ * with no shared owner — `armStageDeadline()` at the bottom of startRun and a
+ * bare `clearStageDeadline()` inside a different function, ~200 lines away.
+ * Nothing in the type system connected the two, and nothing in a test could
+ * reach them.
+ *
+ * So the discipline is now an object with a single owner:
+ *
+ *   - `begin()` is called BEFORE the work starts. Not after. The content script
+ *     answers `content:snapshot` by awaiting its own `snapshot:ready` and only
+ *     then returning, so the event arrives *during* the await. Arming after the
+ *     await means arming after the event has already been handled — a clear()
+ *     that ran earlier disarms a timer that did not exist yet, and the deadline
+ *     is then guaranteed to fire on a run that has moved on.
+ *   - `end()` cancels it, and is safe to call whether or not `begin()` ran.
+ *   - `fire()` is what a re-arm-on-stage-change does NOT do; a repeat event
+ *     leaves the clock alone.
+ *
+ * A late `begin()` is still caught: `begin()` returns false if the stage is
+ * already past, so the caller cannot arm a deadline it has already outrun.
+ */
+export class StageDeadline {
+  private timer: ReturnType<typeof setTimeout> | null = null
+  private armedFor: string | null = null
+  /** Runs whose deadline has already been resolved. Bounded by run count. */
+  private readonly settled = new Set<string>()
+
+  /**
+   * Arm for `stage`, BEFORE the work starts.
+   *
+   * Returns false when this run's deadline is already settled, so a caller
+   * that is somehow late cannot arm a timer for an event that has passed.
+   */
+  begin(runId: string, stage: string, ms: number, onExpire: (stage: string) => void): boolean {
+    if (this.settled.has(runId)) return false
+    this.cancel()
+    this.armedFor = `${runId}:${stage}`
+    this.timer = setTimeout(() => {
+      this.timer = null
+      this.armedFor = null
+      this.settled.add(runId)
+      onExpire(stage)
+    }, ms)
+    return true
+  }
+
+  /**
+   * Cancel. Safe at any time, including when nothing is armed — which is the
+   * point: the event this watches can legitimately arrive before `begin()` was
+   * reached, and that must settle the deadline rather than leave it armed.
+   */
+  end(runId: string): void {
+    this.settled.add(runId)
+    this.cancel()
+  }
+
+  /** Forget a settled run. Called on terminal transitions to keep this bounded. */
+  forget(runId: string): void {
+    this.settled.delete(runId)
+  }
+
+  private cancel(): void {
+    if (this.timer !== null) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    this.armedFor = null
+  }
+
+  /** Diagnostic view — which run:stage is armed, if any. */
+  get armed(): string | null {
+    return this.armedFor
+  }
+}

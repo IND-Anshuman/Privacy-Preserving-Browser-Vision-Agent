@@ -175,7 +175,11 @@ def check_deploy() -> bool:
     # rather than executed, and that a safety rejection is never read as
     # "unparseable, carry on". That fail-open was live for a day.
     b = check_python("test_destructive_label", "destructive gate")
-    return a and b
+    # /live is what the panel's status line calls. It had to be split out of
+    # /health because /health resolves the provider (measured p50 2.91s /
+    # max 4.79s) and the panel was reporting that tail as "unreachable".
+    c = check_python("test_liveness", "liveness endpoint")
+    return a and b and c
 
 
 def check_live_gate() -> bool:

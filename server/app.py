@@ -349,6 +349,29 @@ def _log_metadata(req: StepRequest, out: str, elapsed_ms: float) -> None:
 # ---------------------------------------------------------------- routes
 
 
+@app.get("/live")
+async def live() -> dict[str, object]:
+    """Liveness only. Deliberately does NOT resolve a provider.
+
+    The panel needs to answer two different questions:
+
+      "is the server running?"        -> this endpoint, sub-millisecond
+      "which provider can it reach?"  -> /health, which probes the remote
+                                         endpoint and measured p50 2.91s /
+                                         max 4.79s against a real provider
+
+    The panel was calling /health to display the first, with a 4000ms timeout.
+    That sits inside the measured distribution, so a perfectly healthy server
+    was reported as "unreachable (timeout)" often enough to look like a fault —
+    and it pointed the user at restarting a server that did not need it.
+
+    This endpoint resolves nothing and touches no provider, so it is fast
+    enough to be a status line. It also deliberately exposes no configuration,
+    so it is safe to call before anything is set up.
+    """
+    return {"ok": True, "service": "veil"}
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
     """Liveness plus the honesty surface.
