@@ -200,9 +200,15 @@ def main() -> int:
     # The three claims that matter, and that the old JSON.parse path broke.
     check("the plan parses as an ActionPlan", isinstance(steps, list) and bool(steps))
     check("every step names an action", all(s.get("action") for s in steps))
+    # Only steps that actually NAME a mark can invent one. An `ask_user` step
+    # replaced by the destructive gate has no target at all, and scoring its
+    # missing mark as "invented" would report the safety interlock working as
+    # a grounding failure.
+    named = [(s.get("target") or {}).get("mark") for s in steps
+             if (s.get("target") or {}).get("mark") is not None]
     check("the model invented no marks",
-          all((s.get("target") or {}).get("mark", 999) <= 3 for s in steps),
-          f"marks={[ (s.get('target') or {}).get('mark') for s in steps ]}")
+          all(m <= 3 for m in named),
+          f"marks={named} (steps naming a mark: {len(named)}/{len(steps)})")
     check("confidence is present and is a number",
           isinstance(plan.get("confidence"), (int, float)),
           f"confidence={plan.get('confidence')!r}")

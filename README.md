@@ -244,9 +244,51 @@ T1 TTFT with vLLM             NOT MEASURED
 ```
 
 The server figure is the **degraded** path — no GPU here, so it returns a
-schema-valid `none` plan. It is a floor, not the T1 turn. ARCHITECTURE.md §8's
-700 ms p50 stays a **design target**: this machine has no GPU and no VLM weights,
-and inventing a number from the fallback would be a fabricated benchmark.
+schema-valid `none` plan. It is a floor, not the T1 turn.
+
+#### The T1 number is now measured, against a real provider
+
+`bench/live_timing.py` drives the real HTTP + SSE path. Measured against
+`Qwen/Qwen3-VL-8B-Instruct` over Featherless, n=6 per row:
+
+```
+T1  safe path, p50  13.00 s   p95  18.94 s    fill city + postal code
+T1  destructive,    p50  10.67 s   p95  18.68 s    plan is replaced by ask_user
+    cold first request          18.06 s
+```
+
+**So T1 is ~13 s, not 700 ms.** ARCHITECTURE.md §8's target is missed by more
+than an order of magnitude, and the honest conclusion is that the target
+assumed a local vLLM on a GPU, not an 8B model on a remote API. Local serving
+is the only thing that closes a 13-second gap; nothing on the client side will.
+
+The two rows also show the endpoint is variable: an earlier session measured
+p50 2.07 s for the same intent, and one request stalled past 74 s. A p50 from
+six samples is not a stable distribution, and these figures should be read as
+"seconds to tens of seconds depending on provider load", not as a benchmark.
+
+Client-side compute, which IS the extension's own cost, is measured separately
+by `extension/bench/measure_scan_latency.ts`:
+
+```
+per scan cycle on a ~52-element form (JSDOM parse cost subtracted)
+  pruned-tree collection      p50  12.67 ms
+  L0+L1 classification        p50   5.84 ms
+  frame-diff gate (2 cycles)  p50  42.50 ms
+  T0 summary, our side        p50  15.57 ms      NOT the model's inference
+  ------------------------------------------------------------------
+  client subtotal             p50  62.2 ms
+```
+
+That 42.50 ms gate is the single largest client cost and it is mostly the
+64x64 box-average downscale of a 1920x1080 frame in JS. It is measured, and
+it is the obvious next optimisation. It is also skipped entirely when the page
+has not changed — the harness asserts that behaviour, so the number is for
+work the product actually does.
+
+**T0's model inference is NOT MEASURED** and no number is claimed for it: it
+needs a real Chrome with the Prompt API and a downloaded model, and a stub
+times the stub. Only our side of that call (~15 ms) is measured.
 
 #### L2 was sequential. Batching was the obvious fix and it is the wrong one.
 
@@ -578,7 +620,9 @@ open directly; `bench/l3_canvas.html` is self-contained.
 - **M1 (40-task visual accuracy) and a true OCR recoverability rate are not
   measured.** They stay NOT MEASURED. The `tasks.json` suite exists; the runner
   does not yet drive a real browser against observable state.
-- **T1 latency is a design target**, not a measurement. See M5 above.
+- **T1 latency misses its target by more than an order of magnitude** — measured
+  p50 ~13 s against a remote 8B model, versus ARCHITECTURE.md §8's 700 ms. The
+  target assumed local serving on a GPU. Measured, reported, not closed.
 - **The recoverability proxy is not OCR** and would not catch a recognisable
   face. M3's 0% leak rate is a regex-over-the-redacted-region check.
 - **L3 detection ≠ L3 recovery.** The loop is now wired end to end and stage 1

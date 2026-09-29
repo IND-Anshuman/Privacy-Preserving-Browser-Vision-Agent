@@ -1,0 +1,60 @@
+{
+  "measured_at": "2026-09-29T17:40:32.890Z",
+  "node": "v22.23.2",
+  "platform": "win32 x64",
+  "forms": 20,
+  "elements": 1068,
+  "warmup": 3,
+  "iterations": 25,
+  "jsdom_parse_harness_overhead": {
+    "mean": 248.96651999999983,
+    "p50": 243.9987999999994,
+    "p95": 281.44979999999987,
+    "n": 25
+  },
+  "tree_20_forms": {
+    "mean": 265.192352,
+    "p50": 254.48649999999907,
+    "p95": 333.20380000000114,
+    "n": 25
+  },
+  "tree_per_form": {
+    "mean": 13.259617599999999,
+    "p50": 12.724324999999954,
+    "p95": 16.660190000000057,
+    "n": 25
+  },
+  "l0l1_20_forms": {
+    "mean": 394.7227719999995,
+    "p50": 366.872800000001,
+    "p95": 390.8575000000019,
+    "n": 25
+  },
+  "l0l1_per_form": {
+    "mean": 7.287812599999986,
+    "p50": 6.017409999999904,
+    "p95": 7.622485000000097,
+    "n": 25
+  },
+  "frame_diff_gate_2_cycles": {
+    "mean": 54.59415200000003,
+    "p50": 40.86199999999735,
+    "p95": 90.98549999999886,
+    "n": 25
+  },
+  "frame_diff_skips_unchanged": true,
+  "frame_diff_proceeds_on_change": true,
+  "t0_our_overhead": {
+    "mean": 15.44360799999995,
+    "p50": 15.555299999999988,
+    "p95": 16.14350000000195,
+    "n": 25
+  },
+  "client_cycle_ms": 75.14158220000002,
+  "not_measured": [
+    "chrome prompt api model load and token generation",
+    "captureVisibleTab, canvas composite, JPEG encode",
+    "L2 NER and L3 detector inference",
+    "network round trip"
+  ]
+}
