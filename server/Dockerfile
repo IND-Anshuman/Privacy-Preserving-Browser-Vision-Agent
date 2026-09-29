@@ -32,7 +32,21 @@ COPY bench/ /srv/bench/
 
 ENV PYTHONUNBUFFERED=1 \
     VLLM_BASE_URL=http://vllm:8001 \
-    VEIL_ALLOWED_ORIGINS=chrome-extension://*
+    VEIL_LLM_TIMEOUT_S=90
+
+# CORS is NOT set here, and that is deliberate.
+#
+# This used to bake in `VEIL_ALLOWED_ORIGINS=chrome-extension://*`, which the
+# server now REFUSES outright — a wildcard raises SystemExit(2) at import, so
+# the container could not start at all. It went unnoticed because every local
+# test runs the app in-process and never builds the image.
+#
+# Leaving it unset is also the safer default: with no origins configured the
+# server accepts same-origin and non-browser callers only, and a browser
+# extension is refused until an operator states which extension is allowed.
+# Supply a real value at run time, e.g.
+#   -e VEIL_ALLOWED_ORIGINS=chrome-extension://<extension-id>
+# or `dev` to accept any well-formed extension origin during development.
 
 EXPOSE 8000
 

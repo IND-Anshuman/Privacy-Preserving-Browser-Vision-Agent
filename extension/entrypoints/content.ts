@@ -539,20 +539,38 @@ interface ExecResult {
 }
 
 /**
- * A step that demonstrably did what it was asked.
+ * Report a step that was dispatched.
  *
- * `ok` is true only for `confirmed`/`changed`. An `unchanged` or `unknown`
- * effect is reported as NOT ok, because the alternative — reporting success
- * for a dispatch that changed nothing — is the exact bug this replaces.
+ * `ok` and `effect` are deliberately NOT the same question.
+ *
+ * The first version of this mapped the effect straight onto `ok`, which made
+ * every UNVERIFIABLE action a failure: `scroll`, `navigate`, `hover` and
+ * `focus` have no locally observable effect, so they came back `unknown`, and
+ * a plan whose first step was `scroll` aborted the whole run even though
+ * scrolling had worked perfectly.
+ *
+ * "I cannot see whether this worked" is not "this did not work". So:
+ *
+ *   ok = the page REFUSED the action (inert control, no such option, no
+ *        element, unknown verb). Those are real failures.
+ *   effect = what we observed afterwards, which may honestly be `unknown`.
+ *
+ * Only a verified `unchanged` — we know the page had the chance to react and
+ * did not — is treated as a failure, and that is decided by the run loop,
+ * which has the context to tell "refused" from "no change".
  */
 function effectResult(action: string, effect: ExecResult['effect'], t0: number): ExecResult {
-  const ok = effect === 'confirmed' || effect === 'changed'
+  // `unchanged` means we watched and nothing happened. `unknown` means we
+  // could not possibly tell, which is not a failure.
+  const ok = effect !== 'unchanged'
   return {
     ok,
     action,
     ms: performance.now() - t0,
     effect,
-    ...(ok ? {} : { error: effect === 'unchanged' ? 'the page did not change' : 'could not be verified' }),
+    ...(ok
+      ? {}
+      : { error: 'the page did not change' }),
   }
 }
 
@@ -808,7 +826,11 @@ async function runAndReport(runId: string, index: number, act: PlanAction): Prom
       runId,
       actionIndex: index,
       ok: res.ok,
-      status: res.effect,
+      // The OBSERVED effect, plus a human-readable reason when there is one.
+      // Showing the raw effect word alone left the panel reading "unchanged"
+      // where the user needed to know why nothing happened.
+      status: res.error ?? res.effect,
+      effect: res.effect,
       ms: res.ms,
     })
     .catch(() => {

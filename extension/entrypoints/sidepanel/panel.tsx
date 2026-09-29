@@ -198,7 +198,14 @@ function apply(msg: VeilMessage): void {
       if (step) {
         step.status = msg.ok ? 'done' : 'failed'
         step.ms = Math.round(msg.ms)
-        step.note = msg.ok ? '' : msg.status
+        // Say WHY. A step that ran but could not be verified is not the same
+        // as one that was refused outright, and the user cannot tell them
+        // apart if both just read "failed".
+        if (msg.ok) {
+          step.note = msg.effect === 'unknown' ? 'ran, not verified' : ''
+        } else {
+          step.note = msg.status
+        }
       }
       break
     }

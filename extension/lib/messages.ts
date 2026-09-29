@@ -133,7 +133,10 @@ export const MessageSchema = z.discriminatedUnion('kind', [
     runId: z.string(),
     actionIndex: z.number().int().nonnegative(),
     ok: z.boolean(),
+    /** A human-readable reason when `ok` is false, else the observed effect. */
     status: z.string(),
+    /** The verification verdict: confirmed | changed | unchanged | unknown. */
+    effect: z.enum(['confirmed', 'changed', 'unchanged', 'unknown']).optional(),
     ms: z.number(),
   }),
   z.object({ kind: z.literal('execute:confirm_required'), runId: z.string(), actionIndex: z.number().int(), label: z.string() }),

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Veil inference sandbox</title>
+    <!--
+      HARD INVARIANT (ARCHITECTURE.md §6.3): the raw frame never reaches the
+      network. This document is the only context that ever holds one, and this
+      CSP is the enforcement mechanism: connect-src is 'self' (the extension
+      origin) only. The page itself makes no outbound request at all — the
+      background worker performs the single POST with already-sanitized bytes.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:;">
+    <style>
+      body {
+        margin: 0;
+        background: #0b1220;
+        color: #e2e8f0;
+        font: 12px ui-monospace, monospace;
+      }
+      canvas {
+        max-width: 320px;
+        border: 1px solid #334155;
+      }
+    </style>
+    <script type="module" crossorigin src="/chunks/_virtual_wxt-plugins-BXRE1WEP.js"></script>
+    <script type="module" crossorigin src="/chunks/_virtual_wxt-html-plugins-U4IISAkk.js"></script>
+  </head>
+  <body>
+    <canvas id="stage" width="16" height="16"></canvas>
+    <div id="log">offscreen ready</div>
+  </body>
+</html>

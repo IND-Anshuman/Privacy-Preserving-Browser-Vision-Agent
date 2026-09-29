@@ -13,7 +13,7 @@ import { defineBackground } from 'wxt/sandbox'
 import type { Msg, VeilMessage } from '@/lib/messages'
 import { parseMessage } from '@/lib/messages'
 import { parseActionPlan, parseManifest, ScreenStateSchema, SCHEMA_VERSION, type ActionPlan, type ScreenNode } from '@/lib/schema'
-import { runPlan, MAX_STEPS_PER_PLAN, type PlanStep, type StepDriver, type StepResult } from '@/lib/execution'
+import { runPlan, MAX_STEPS_PER_PLAN, type PlanStep, type PlanRunResult, type StepDriver, type StepResult } from '@/lib/execution'
 import { parsePlanStream } from '@/lib/sse'
 
 /* ------------------------------------------------------------------ *
@@ -556,6 +556,60 @@ async function onRedactReady(msg: Extract<VeilMessage, { kind: 'redact:ready' }>
 /** Steps that must be handed to the human rather than run automatically. */
 
 /**
+ * Report what actually happened to the server.
+ *
+ * `/v1/agent/outcome` existed and was never called by anything, so the server's
+ * record of a session contained a first-action attempt and nothing else. The
+ * replan machinery — `s.failures`, `s.completed`, `s.declined` — is fed
+ * entirely by this endpoint, so with no client the server could never learn
+ * that a step failed and would happily propose the same failing plan again.
+ *
+ * Only counts, action names and a bounded reason are sent. No page content, no
+ * values, no DOM. A failure here is logged and swallowed: history must never
+ * fail a live turn.
+ */
+async function reportOutcome(
+  sessionId: string,
+  body: { action: string; ok: boolean; detail?: string; turn?: number; declined?: string },
+): Promise<void> {
+  try {
+    await fetch(`${serverOrigin}/v1/agent/outcome`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, ...body }),
+    })
+  } catch {
+    // Unreachable server is not a run failure; the run already reported itself.
+  }
+}
+
+/** Convert a run's event log into the outcome calls the server needs. */
+async function reportRunOutcome(runId: string, result: PlanRunResult): Promise<void> {
+  const run = runs.get(runId)
+  if (!run) return
+  for (const ev of result.events) {
+    if (ev.type === 'failed') {
+      await reportOutcome(run.sessionId, {
+        action: 'step',
+        ok: false,
+        detail: ev.reason,
+        turn: run.turn,
+      })
+    } else if (ev.type === 'declined') {
+      await reportOutcome(run.sessionId, {
+        action: 'step',
+        ok: false,
+        declined: ev.reason,
+        detail: 'the user declined this step',
+        turn: run.turn,
+      })
+    } else if (ev.type === 'executed') {
+      await reportOutcome(run.sessionId, { action: 'step', ok: true, turn: run.turn })
+    }
+  }
+}
+
+/**
  * Run a plan in order, awaiting each step.
  *
  * The loop itself now lives in `lib/execution.ts` as a pure function over a
@@ -597,7 +651,11 @@ async function executePlan(
     },
   }
 
-  const res = await runPlan({ steps: plan.steps as PlanStep[] }, driver)
+  const res = await runPlan({ steps: plan.steps as PlanStep[] }, driver, {
+    // Give an async re-render a moment before the next step resolves its mark
+    // against the DOM. 120ms is a re-render budget, not a page-load budget.
+    settle: sleep,
+  })
 
   // Report what actually happened. A run that stopped early must say so.
   for (const ev of res.events) {
@@ -613,6 +671,10 @@ async function executePlan(
       })
     }
   }
+
+  // Feed the real result back to the server so the next plan in this session
+  // knows what happened instead of repeating the same failing step.
+  void reportRunOutcome(runId, res)
 
   stage(runId, 'execute', 0)
   const run = runs.get(runId)

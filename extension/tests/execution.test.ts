@@ -169,6 +169,124 @@ describe('loop control flow', () => {
   })
 })
 
+describe('the page settles between steps', () => {
+  it('waits briefly after a step that changed something', async () => {
+    // A click that re-renders asynchronously leaves the next step resolving
+    // marks against a half-updated DOM. The loop, not the page, owns the wait.
+    let waited = 0
+    const d: import('../lib/execution').StepDriver = {
+      async run() {
+        return { ok: true, action: 'click', ms: 1, effect: 'confirmed' }
+      },
+      async ask() {
+        return true
+      },
+    }
+    await runPlan({ steps: [step('click'), step('click')] }, d, {
+      settle: async (ms) => { waited += ms },
+    })
+    expect(waited).toBeGreaterThan(0)
+  })
+
+  it('does NOT settle after a step whose effect is unknown', async () => {
+    // `unknown` means the page may not have reacted at all. Waiting for a
+    // re-render that is not happening is pure latency.
+    let waited = 0
+    const d: import('../lib/execution').StepDriver = {
+      async run() {
+        return { ok: true, action: 'scroll', ms: 1, effect: 'unknown' }
+      },
+      async ask() { return true },
+    }
+    await runPlan({ steps: [step('scroll')] }, d, {
+      settle: async (ms) => { waited += ms },
+    })
+    expect(waited).toBe(0)
+  })
+
+  it('does not settle after the final step — nothing follows it', async () => {
+    let waited = 0
+    const d: import('../lib/execution').StepDriver = {
+      async run() { return { ok: true, action: 'click', ms: 1, effect: 'confirmed' } },
+      async ask() { return true },
+    }
+    await runPlan({ steps: [step('click')] }, d, {
+      settle: async (ms) => { waited += ms },
+    })
+    expect(waited).toBe(0)
+  })
+
+  it('a throwing settle must not fail the run', async () => {
+    const d: import('../lib/execution').StepDriver = {
+      async run() { return { ok: true, action: 'click', ms: 1, effect: 'confirmed' } },
+      async ask() { return true },
+    }
+    const res = await runPlan({ steps: [step('click'), step('click')] }, d, {
+      settle: async () => { throw new Error('tab closed') },
+    })
+    expect(res.executed).toBe(2)
+    expect(res.ok).toBe(true)
+  })
+})
+
+describe('an unverifiable action is not a failed action', () => {
+  // Regression: mapping the effect straight onto `ok` made every
+  // unverifiable action a failure, so a plan whose first step was `scroll`
+  // aborted the whole run even though scrolling worked. "I cannot see whether
+  // this worked" is a different statement from "this did not work", and only
+  // the second one should stop a plan.
+  const cases: Array<[string, import('../lib/execution').StepResult]> = [
+    ['scroll', { ok: true, action: 'scroll', effect: 'unknown', ms: 1 }],
+    ['navigate', { ok: true, action: 'navigate', effect: 'unknown', ms: 1 }],
+    ['hover', { ok: true, action: 'hover', effect: 'unknown', ms: 1 }],
+    ['focus', { ok: true, action: 'focus', effect: 'unknown', ms: 1 }],
+  ]
+  it.each(cases)('%s does not stop the run', async (_name, result) => {
+    const executed: number[] = []
+    const d: import('../lib/execution').StepDriver = {
+      async run(i) {
+        executed.push(i)
+        return result
+      },
+      async ask() { return true },
+    }
+    const res = await runPlan({ steps: [step(_name), step('click')] }, d)
+    expect(executed).toEqual([0, 1])
+    expect(res.ok).toBe(true)
+  })
+
+  it('a verified-no-change DOES stop the run', async () => {
+    // The distinction that matters: `unchanged` is evidence of failure,
+    // `unknown` is absence of evidence.
+    const d: import('../lib/execution').StepDriver = {
+      async run() {
+        return { ok: false, action: 'fill', effect: 'unchanged', error: 'the page did not change', ms: 1 }
+      },
+      async ask() { return true },
+    }
+    const res = await runPlan({ steps: [step('fill'), step('click')] }, d)
+    expect(res.failed).toBe(1)
+    expect(res.ok).toBe(false)
+  })
+
+  it('does not settle after an unverifiable step, but does after a verified one', async () => {
+    const seen: string[] = []
+    const d: import('../lib/execution').StepDriver = {
+      async run(i) {
+        return i === 0
+          ? { ok: true, action: 'scroll', effect: 'unknown', ms: 1 }
+          : { ok: true, action: 'click', effect: 'confirmed', ms: 1 }
+      },
+      async ask() { return true },
+    }
+    await runPlan({ steps: [step('scroll'), step('click'), step('click')] }, d, {
+      settle: async () => { seen.push('settled') },
+    })
+    // Only the confirmed click, and only because another step followed it.
+    expect(seen).toHaveLength(1)
+  })
+})
+
 describe('every outcome is representable in the event log', () => {
   it('records a full successful run in order', async () => {
     const { d } = driver()

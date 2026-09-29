@@ -94,6 +94,25 @@ export interface StepDriver {
   ask(index: number, reason: string): Promise<boolean>
 }
 
+export interface RunOptions {
+  /**
+   * Pause after a step that visibly changed the page.
+   *
+   * A click that triggers an async re-render leaves the DOM half-updated; the
+   * next step would resolve its mark against that intermediate state and could
+   * target the wrong node. The wait belongs to the LOOP, not the page, because
+   * only the loop knows whether another step follows.
+   *
+   * It is skipped when the effect is `unknown` (the page may not have reacted
+   * at all) and after the final step (nothing follows it).
+   */
+  settle?: (ms: number) => Promise<void>
+  /** How long to settle. Small: this is a re-render, not a page load. */
+  settleMs?: number
+}
+
+const SETTLE_DEFAULT_MS = 120
+
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 /**
@@ -106,7 +125,9 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 export async function runPlan(
   plan: { steps: PlanStep[] },
   driver: StepDriver,
+  opts: RunOptions = {},
 ): Promise<PlanRunResult> {
+  const settleMs = opts.settleMs ?? SETTLE_DEFAULT_MS
   const events: StepEvent[] = []
   const requested = plan.steps.length
   const limit = Math.min(requested, MAX_STEPS_PER_PLAN)
@@ -184,7 +205,21 @@ export async function runPlan(
     }
 
     executed++
-    events.push({ type: 'executed', index: i, ms: res.ms ?? 0, effect: res.effect ?? 'unknown' })
+    const effect = res.effect ?? 'unknown'
+    events.push({ type: 'executed', index: i, ms: res.ms ?? 0, effect })
+
+    // Let an async re-render finish before the next step resolves its mark.
+    // Skipped when the page demonstrably did not change, and after the last
+    // step, where there is nothing left to wait for.
+    const moreStepsRemain = i + 1 < limit
+    if (opts.settle && moreStepsRemain && (effect === 'confirmed' || effect === 'changed')) {
+      try {
+        await opts.settle(settleMs)
+      } catch {
+        // A closed tab or a torn-down frame must not turn a good run into a
+        // failed one. The next step will fail honestly on its own.
+      }
+    }
   }
 
   if (requested > limit) events.push({ type: 'capped', requested, ran: limit })
