@@ -472,8 +472,9 @@ docker-compose masked; check 3 reads the Dockerfile and fails on it.
 # 1. bench harness — every number in this README
 ./.venv/Scripts/python.exe bench/gen_synthetic.py        # regenerate corpus
 ./.venv/Scripts/python.exe bench/test_contract.py       # wire-format check
-./.venv/Scripts/python.exe bench/test_server.py         # 16 server checks
+./.venv/Scripts/python.exe bench/test_server.py         # 14 server checks
 ./.venv/Scripts/python.exe bench/test_cors.py           # 12 CORS checks
+./.venv/Scripts/python.exe bench/test_destructive_label.py  # 10 destructive-gate checks
 cd extension && npx vitest run && npx wxt build         # 263 tests, both targets
 
 # server
@@ -544,6 +545,36 @@ open directly; `bench/l3_canvas.html` is self-contained.
   because its fixtures had been written in the server's own spelling — it was
   testing the server against itself. `bench/test_contract.py` now derives the
   fixture from the client's Zod schema and fails on any drift.
+- **A safety rejection was being read as "let it through."** `_apply_escalation_gate`
+  caught every parse exception and returned `None`, which the caller reads as "no
+  replacement needed". But a `ValidationError` from the destructive-verb check
+  arrives the same way, so the one plan the safety rule had just rejected was the
+  one plan allowed through. Found by driving the live model with "pay for the
+  order" and watching `action=click, confidence=0.98` reach the client. Now only
+  a genuinely unparseable blob passes through; a safety rejection becomes
+  `ask_user` with no steps. `bench/test_destructive_label.py`.
+- **The destructive gate read the wrong text.** It scanned the plan's own words
+  for destructive verbs, but a grounded plan addresses a control by mark and never
+  says what the button is called. `click -> mark 3` on a node labelled
+  "Submit order" contains no destructive token, so it passed. The target's own
+  label is now scanned with the same regex — the label is already in the request,
+  it was one lookup away.
+- **A correctly configured `.env` never reached the provider.** Providers snapshot
+  `os.environ` in `__init__`, and `Router()` runs at module import — but
+  `uvicorn --env-file .env` populates the environment *after* that import. So
+  every provider captured an empty base URL and fell back to a dead port, and
+  `/health` reported "no provider reachable" no matter how correct the file was.
+  The app now loads `.env` itself before the singletons are built.
+- **`/health` reported "no provider reachable" on a healthy server.** It called
+  `router.active()`, which only reports whichever provider a *previous* request
+  selected — so on a fresh process, always nothing. It now resolves. A missing
+  `engine_summary` on the fake provider used to raise, i.e. 500 the one endpoint
+  an operator polls; that degrades the report instead.
+- **A test suite inherited production credentials and called the real model.**
+  Once the app loaded `.env` itself, `bench/test_server.py` made a billed request
+  and `bench/test_cors.py` timed out at 300s — reported as a CORS failure, which
+  it was not. Both now pin the fake provider. Suites that stop being unit tests
+  when a `.env` exists are a design smell, not a test bug.
 - **M1 (40-task visual accuracy) and a true OCR recoverability rate are not
   measured.** They stay NOT MEASURED. The `tasks.json` suite exists; the runner
   does not yet drive a real browser against observable state.

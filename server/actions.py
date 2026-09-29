@@ -93,6 +93,7 @@ def check_plan_against_state(plan: ActionPlan, screen_state: dict[str, Any]) -> 
     problems: list[str] = []
     valid_marks = collect_marks(screen_state.get("root", {}))
     sensitive_marks = collect_sensitive_marks(screen_state.get("root", {}))
+    labels = collect_labels(screen_state.get("root", {}))
 
     for i, s in enumerate(plan.steps):
         mark = (s.target or {}).get("mark")
@@ -100,6 +101,26 @@ def check_plan_against_state(plan: ActionPlan, screen_state: dict[str, Any]) -> 
             continue
         if valid_marks and mark not in valid_marks:
             problems.append(f"step {i}: mark {mark} does not exist on this page")
+        # The target's OWN LABEL is part of the safety surface.
+        #
+        # `_shape` greps the step's own words, but a grounded plan addresses a
+        # control by mark and never repeats what the button says. Measured
+        # against the live model, "pay for the order" came back as
+        # action=click, target.mark=3, confidence=0.98 — aimed at a node
+        # labelled "Submit order". Nothing in that plan contains a destructive
+        # token, so the gate passed and the click would have run unattended.
+        #
+        # The label is already here; it is one lookup away. Same regex, one more
+        # field — no new heuristic about what a button looks like.
+        if s.action not in ("ask_user", "none"):
+            label = labels.get(mark)
+            if label:
+                hit = DESTRUCTIVE.search(label)
+                if hit:
+                    problems.append(
+                        f"step {i}: target is labelled {label!r}, which contains the "
+                        f"destructive verb {hit.group(0)!r}; it must be emitted as ask_user"
+                    )
         if s.action in FILLABLE and mark in sensitive_marks:
             problems.append(f"step {i}: refusing to {s.action} a sensitive field (mark {mark})")
         if s.action == "fill" and s.value:
@@ -119,6 +140,22 @@ def collect_marks(node: dict[str, Any]) -> set[int]:
         out.add(int(node["mark"]))
     for c in node.get("children", []) or []:
         out |= collect_marks(c)
+    return out
+
+
+def collect_labels(node: dict[str, Any]) -> dict[int, str]:
+    """mark -> the label the client assigned to that control.
+
+    Needed because a grounded plan says `mark: 3` and never says what button 3
+    is. The wording that makes a control dangerous lives here, not in the plan.
+    """
+    out: dict[int, str] = {}
+    if not isinstance(node, dict):
+        return out
+    if node.get("mark") is not None and isinstance(node.get("label"), str):
+        out[int(node["mark"])] = node["label"]
+    for c in node.get("children", []) or []:
+        out.update(collect_labels(c))
     return out
 
 

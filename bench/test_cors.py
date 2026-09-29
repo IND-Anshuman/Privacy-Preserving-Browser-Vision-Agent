@@ -75,6 +75,15 @@ def preflight(origin: str, port: int = 8199) -> tuple[int, str]:
     env = dict(os.environ)
     env["VEIL_ALLOWED_ORIGINS"] = "dev"
     env["PYTHONPATH"] = str(ROOT)
+    # This suite is about CORS headers, not about reaching a model. Without
+    # these, `server.app` loads the operator's real .env and every /health poll
+    # probes the live endpoint — which turned a 2-second header check into a
+    # 300-second timeout, and reported it as a CORS failure.
+    #
+    # The same pinning bench/test_server.py needs, for the same reason: a suite
+    # that inherits production credentials stops being a unit test.
+    env["VEIL_LLM_PROVIDER"] = "fake"
+    env["VEIL_ENV_FILE"] = str(ROOT / "bench" / ".no-such-env-file")
     code = (
         "import uvicorn, server.app as a\n"
         f"uvicorn.run(a.app, host='127.0.0.1', port={port}, log_level='error')\n"

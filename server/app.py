@@ -168,6 +168,42 @@ app.add_middleware(
 # per-session state. Both are module-level singletons because FastAPI handlers
 # are stateless functions; the state they share is transport state, not
 # request state, and lives in the objects rather than in globals.
+# Load .env BEFORE the singletons below.
+#
+# Each provider snapshots os.environ into self.base_url / self.api_key /
+# self.model in its __init__, so configuration is read exactly once, at import
+# time. `uvicorn --env-file .env` populates the environment AFTER this module
+# is imported, which meant every provider captured an empty base_url and no key
+# and fell back to http://127.0.0.1:8001. With nothing there, /health reported
+# "no provider reachable" and every step returned action:none — permanently,
+# no matter how correct the .env was. The documented start command could not
+# work, and looked configured while behaving unconfigured, which is the worst
+# way for this to fail.
+#
+# `setdefault` keeps an explicitly-exported variable winning, so a test harness
+# that sets VEIL_* in os.environ is not overridden by the file.
+def _load_env_file() -> None:
+    try:
+        from dotenv import load_dotenv  # optional dependency
+    except ImportError:
+        path = os.environ.get("VEIL_ENV_FILE", str(Path(__file__).resolve().parents[1] / ".env"))
+        if not os.path.isfile(path):
+            return
+        try:
+            for raw in Path(path).read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+        except OSError as e:  # unreadable .env must not kill the import
+            log.warning("could not read %s: %s", path, e)
+        return
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
+
+
+_load_env_file()
+
 router = Router()
 sessions = SessionStore()
 client = VLLMClient()
@@ -321,14 +357,34 @@ async def health() -> dict[str, Any]:
     is actually selected right now. An operator debugging "why is my plan being
     rejected" needs to see that the provider downgraded its schema enforcement,
     and a health check that only says `ok: true` would hide exactly that.
+
+    `/health` used to call `router.active()`, which only reports whichever
+    provider a PREVIOUS request happened to select. On a freshly started server
+    nothing has been resolved yet, so it always answered "no provider reachable"
+    and `model: null` — even with a perfectly configured endpoint. The symptom
+    is indistinguishable from a misconfiguration, which sends the operator
+    hunting through their .env for a mistake that was never there.
+
+    So it resolves now. The probes are cheap HTTP GETs to /models and the result
+    is cached inside each provider, so a poll loop is not hammering the endpoint.
     """
-    active = router.active()
+    active = await router.resolve()
     caps = [p.caps.as_dict() for p in router.providers]
+    # `engine_summary` is a convention, not part of the provider contract:
+    # LocalVLLMProvider and OpenAICompatProvider both define it, FakeProvider
+    # does not. Reading it as `active.engine_summary` made /health raise
+    # AttributeError — a 500 on the one endpoint an operator and a container
+    # orchestrator both poll. A missing summary must degrade the report, never
+    # break it.
+    summary = (
+        getattr(active, "engine_summary", None)
+        or (f"{active.caps.name} (no engine summary)" if active else "no provider reachable")
+    )
     return {
         "ok": True,
         "vllm": client.available,
         "model": active.model_name() if active else None,
-        "engine": active.engine_summary if active else "no provider reachable",
+        "engine": summary,
         "provider": active.caps.name if active else None,
         "providers": caps,
         "confidence_floor": CONFIDENCE_FLOOR,
@@ -641,13 +697,42 @@ def _apply_escalation_gate(
         arrives on the attempt that hits the cap is replaced here too, so the
         cap holds regardless of which path the turn took.
 
-    A plan that will not parse is NOT touched here. The validator owns that,
-    and a parse failure must surface as a failure rather than be silently
-    rewritten into something executable-looking.
+    A plan that will not parse is NOT touched here — UNLESS the reason it would
+    not parse is a SAFETY rejection, which must never read as "carry on".
     """
     try:
         plan = ActionPlan.model_validate_json(raw)
-    except Exception:  # noqa: BLE001 — malformed output is the validator's business
+    except Exception as e:  # noqa: BLE001
+        # THE FAIL-OPEN THIS REPLACES
+        # ---------------------------
+        # This used to `return None` on any exception, because a truncated
+        # JSON blob is not worth rewriting. But a ValidationError raised by the
+        # DESTRUCTIVE-VERB check looks identical from here, and None means "no
+        # replacement needed" to the caller. So the one plan that most needed a
+        # human — the one the safety rule had just rejected — was the one plan
+        # allowed straight through to the client.
+        #
+        # Measured against the live model: "pay for the order" came back as
+        # action=click, confidence=0.98. It was correctly rejected, and that
+        # rejection was swallowed.
+        #
+        # The two cases are distinguishable: a truncation has no usable message
+        # about what was wrong, a safety rejection names the offending verb.
+        # So a rejection we can explain becomes an ask_user, and only a truly
+        # unparseable blob still passes through untouched — where the client's
+        # own parser will reject it anyway.
+        msg = str(e)
+        if "destructive verb" in msg:
+            log.warning("plan rejected by the destructive gate: %s", msg)
+            # Recover the session id from the raw text rather than from `plan`,
+            # which does not exist on this branch.
+            import re as _re
+
+            m = _re.search(r'"session_id"\s*:\s*"([^"]+)"', raw)
+            return _ask_user_replacement(
+                m.group(1) if m else "",
+                f"this plan targets something destructive, so it needs you: {msg[:200]}",
+            )
         return None
 
     reasons: list[str] = []
@@ -698,6 +783,26 @@ def _apply_escalation_gate(
         "session=%s escalated to ask_user (%s)", req.session_id[-8:], "; ".join(reasons)
     )
     return escalated.model_dump_json()
+
+
+def _ask_user_replacement(session_id: str, reason: str) -> str:
+    """A plan that stops and asks, for a plan we refused to even parse.
+
+    Separate from the escalation path above because that one needs a `plan` and
+    a live `req` to read confidence and session state from. This branch has
+    neither: the raw text failed validation, so the only honest thing to send
+    is a question and no steps.
+
+    Confidence is 0.0 because nothing was successfully understood — claiming
+    the model's own number here would report confidence in a plan we discarded.
+    """
+    return ActionPlan(
+        schema_version=SCHEMA_VERSION,
+        session_id=session_id or "unknown-session",
+        steps=[{"action": "ask_user", "reason": reason}],
+        confidence=0.0,
+        needs_more_context=["manual intervention required"],
+    ).model_dump_json()
 
 
 def _build_user_text(req: StepRequest) -> str:

@@ -167,13 +167,55 @@ def check_server() -> bool:
 
 
 def check_deploy() -> bool:
-    head("3/6  Deployment contract")
-    return check_python("test_deploy_contract", "container can boot")
+    head("3/6  Deployment contract + the destructive gate")
+    a = check_python("test_deploy_contract", "container can boot")
+    # Offline proof of the interlock. The LIVE proof needs a provider and is
+    # `--live` only — see `check_live_task` below. What this suite establishes
+    # is that a plan aimed at a control labelled "Submit order" is escalated
+    # rather than executed, and that a safety rejection is never read as
+    # "unparseable, carry on". That fail-open was live for a day.
+    b = check_python("test_destructive_label", "destructive gate")
+    return a and b
 
 
 def check_live_gate() -> bool:
     head("4/6  Plan gate, driven through the real endpoint")
     return check_python("test_plan_gate_live", "bad plans are escalated live")
+
+
+def check_live_task(port: int) -> bool:
+    """Drive the CONFIGURED model. Only run when one exists.
+
+    This is the check that caught the destructive fail-open: a live plan for
+    "pay for the order" came back as action=click, confidence=0.98, and the
+    gate that should have stopped it returned None, which the caller reads as
+    "no replacement needed". No offline suite could have found that, because
+    the plan had to be a real one aimed at a real label.
+    """
+    head("6/6  Live task against the configured model")
+    good, out = run("live_task", [PY, f"bench/live_task.py", "--port", str(port)], ROOT,
+                    timeout=600)
+    body = plain(out)
+    for line in body.splitlines():
+        if line.strip().startswith(("PASS", "FAIL")) or "->" in line:
+            print(f"  {line.rstrip()}")
+    if not good:
+        bad("live task")
+    return good
+
+
+def check_live_destructive(port: int) -> bool:
+    head("7/7  Live destructive interlock")
+    good, out = run("live_destr", [PY, f"bench/live_destructive.py", "--port", str(port)], ROOT,
+                    timeout=900)
+    body = plain(out)
+    for line in body.splitlines():
+        if line.strip().startswith(("PASS", "FAIL")) or "->" in line or "escalated" in line \
+                or "declined" in line:
+            print(f"  {line.rstrip()}")
+    if not good:
+        bad("live destructive interlock")
+    return good
 
 
 def check_build() -> bool:
@@ -544,7 +586,15 @@ def main() -> int:
     if is_fake:
         run_live_task("http://127.0.0.1:8000", offline=True)
     elif env.get("VEIL_LLM_API_KEY", "").strip() and env.get("VEIL_LLM_BASE_URL", "").strip():
-        run_live_task("http://127.0.0.1:8000", offline=False)
+        # Two real checks against the configured model, both through the
+        # running server. `check_live_destructive` is the one that matters:
+        # it is the only check in the project that can catch a real plan
+        # aimed at a real destructive control, which is exactly what the
+        # offline suites cannot do.
+        live_ok = [check_live_task(8000), check_live_destructive(8000)]
+        head("Live summary")
+        for label, r in (("live task", live_ok[0]), ("live destructive interlock", live_ok[1])):
+            print(f"  {(C['g'] + 'PASS' if r else C['r'] + 'FAIL') + C['reset']}  {label}")
     else:
         head("6/6  A real task, through HTTP + SSE")
         print(f"  {C['y']}NOT MEASURED{C['reset']} — no model endpoint configured.")

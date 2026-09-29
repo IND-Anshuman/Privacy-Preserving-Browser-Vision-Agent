@@ -10,6 +10,7 @@ Verifies the three behaviours that matter for the privacy claim:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -20,6 +21,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient  # noqa: E402
+
+# A unit suite must not spend money, and must not depend on a network.
+#
+# `server.app` loads .env ITSELF so the documented start command works, which
+# means importing it here picks up the operator's real VEIL_LLM_* config. The
+# first version of this suite therefore made a BILLED call to the configured
+# endpoint and then measured whatever came back — a test that silently becomes
+# an integration test the moment someone fills in their key, and fails for
+# reasons that have nothing to do with the server.
+#
+# This MUST sit above the import below: the .env loader and `Router()` both
+# run at import time, so anything set afterwards is too late.
+os.environ["VEIL_LLM_PROVIDER"] = "fake"
+os.environ["VEIL_ENV_FILE"] = str(Path(__file__).parent / ".no-such-env-file")
 
 from server import app as veil_app  # noqa: E402
 from server.actions import ACTION_NAMES, check_plan_against_state, validate_plan  # noqa: E402
@@ -78,6 +93,20 @@ def body(**over) -> dict:
     return b
 
 
+def _provider_reachable() -> bool:
+    """Did the router find a provider for the requests this suite made?
+
+    Async because `Router.resolve()` probes. The fake provider is always
+    available, so this is True — and the two degradation checks below are then
+    correctly SKIPPED rather than run against a healthy provider.
+    """
+    import asyncio
+    try:
+        return asyncio.run(veil_app.router.resolve()) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def main() -> int:
     failures: list[str] = []
     total = 0
@@ -134,7 +163,14 @@ def main() -> int:
                 f"action={plan['steps'][0].get('action')}",
             )
             # With no engine behind it, honesty is the requirement.
-            if not veil_app.client.available:
+            #
+            # This used to key off `veil_app.client.available` — the legacy
+            # vLLMClient — which says nothing about whether the ROUTER found a
+            # provider. With the offline provider pinned it was always False,
+            # so these two checks ran against a working fake provider and
+            # failed. The question is "did a provider answer?", so ask the
+            # router.
+            if not _provider_reachable():
                 check(
                     "unavailable engine degrades to `none`, not a hallucinated target",
                     plan["steps"][0]["action"] == "none" and plan["confidence"] == 0.0,
