@@ -105,6 +105,35 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .icon-btn {
+        appearance: none;
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        flex-shrink: 0;
+        padding: 0;
+        border-radius: 7px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+      }
+      .icon-btn svg { width: 14px; height: 14px; display: block; }
+      .icon-btn:hover {
+        background: var(--brand-soft);
+        color: var(--brand-ink);
+        border-color: var(--line-strong);
+      }
+      .icon-btn:active { background: var(--brand-soft); transform: rotate(-180deg); }
+      .icon-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+      /* Set while a reload is in flight so the button cannot be double-fired. */
+      .icon-btn[aria-busy='true'] { opacity: 0.55; pointer-events: none; }
+      @media (prefers-reduced-motion: reduce) {
+        .icon-btn { transition: none; }
+        .icon-btn:active { transform: none; }
+      }
       .conn {
         display: inline-flex;
         align-items: center;
@@ -427,6 +456,18 @@
         <p id="tagline">Your screen is read on this device. Nothing sensitive leaves.</p>
       </div>
       <span class="conn" id="conn" data-state="down" title="Checking the assistant…">checking</span>
+      <button
+        id="reload"
+        class="icon-btn"
+        type="button"
+        title="Reload Veil — re-reads the page and re-checks the server"
+        aria-label="Reload Veil"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+          <path d="M20 4v6h-6" />
+        </svg>
+      </button>
     </header>
 
     <nav class="tabs" role="tablist" aria-label="Sections">

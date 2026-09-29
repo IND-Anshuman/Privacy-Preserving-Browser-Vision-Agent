@@ -717,6 +717,63 @@ $('run')?.addEventListener('click', () => {
   state.mode = 'auto'
 })
 
+/**
+ * Reload Veil.
+ *
+ * Does the three things that actually go stale, and nothing else:
+ *   1. re-probes /health (the server may have been restarted),
+ *   2. drops the previous run's derived state, so the privacy ledger and the
+ *      step list cannot describe a page that has since changed,
+ *   3. re-snapshots the active tab.
+ *
+ * It deliberately does NOT call chrome.runtime.reload(). That tears down the
+ * service worker and closes the panel, which on a side panel means the user
+ * loses the transcript they were reading. This is a re-read, not a restart.
+ */
+async function reloadVeil(): Promise<void> {
+  const btn = $<HTMLButtonElement>('reload')
+  if (btn?.getAttribute('aria-busy') === 'true') return
+  btn?.setAttribute('aria-busy', 'true')
+
+  try {
+    // A pending confirmation is the one state we must not silently discard: the
+    // agent is blocked mid-decision and a re-read would strand the user.
+    if (state.confirm) {
+      push('warn', 'Finish the pending confirmation first, then reload.')
+      return
+    }
+
+    state.manifest = null
+    state.plan = null
+    state.bytesOut = 0
+    state.redactions = 0
+    state.opaque = 0
+    state.aborts = 0
+    state.stages = []
+    state.steps = []
+    state.health = null
+    render()
+    await probeHealth()
+
+    // Re-snapshot the tab so the Privacy tab reflects the page as it is now,
+    // not as it was on the last run.
+    //
+    // T0 is the right tier here, and the reason is not obvious: startRun runs
+    // the DOM snapshot and the pixel redaction BEFORE the tier branch, so a T0
+    // run still produces a full manifest and a fresh privacy ledger. It then
+    // short-circuits before the network call. That gives a complete local
+    // re-read with nothing sent — T1 would answer the question over the
+    // network, which a reload should never do unasked.
+    send({ kind: 'panel:run', intent: 'Describe what is on this page.', tier: 'T0' })
+  } finally {
+    btn?.removeAttribute('aria-busy')
+  }
+}
+
+$('reload')?.addEventListener('click', () => {
+  void reloadVeil()
+})
+
 render()
 
 // Probe the server on open, using the same stored origin the SW calls. Until
