@@ -80,8 +80,15 @@ def body(**over) -> dict:
 
 def main() -> int:
     failures: list[str] = []
+    total = 0
 
     def check(name: str, cond: bool, detail: str = "") -> None:
+        # `total` is counted here rather than at the call sites so the tally
+        # cannot drift from the number of checks actually run. The gate in
+        # demo.py requires an explicit count, which is how this suite was found
+        # to print "all passed" with no way to tell 5 checks from 500.
+        nonlocal total
+        total += 1
         print(f"  {'PASS' if cond else 'FAIL'}  {name}{(' — ' + detail) if detail else ''}")
         if not cond:
             failures.append(name)
@@ -195,7 +202,7 @@ def main() -> int:
     if failures:
         print(f"  {len(failures)} FAILED: {', '.join(failures)}\n")
         return 1
-    print("  all server checks passed\n")
+    print(f"  all {total} server checks passed\n")
     return 0
 
 

@@ -432,13 +432,49 @@ test suite, and the build — and each would have been a privacy failure.
 
 ## Running it
 
+### One command
+
+```bash
+./.venv/Scripts/python.exe bench/demo.py
+```
+
+That runs the whole verification gate, builds the extension, starts the API
+and the form server, and then — if a model is configured — runs one real task
+through the actual HTTP + SSE path and prints the plan it received. It prints
+the load path for `chrome://extensions` at the end. Ctrl-C stops the servers.
+
+```bash
+bench/demo.py --verify        # gate only, no servers
+bench/demo.py --live          # refuse to run unless a provider is configured
+bench/demo.py --fake          # offline provider: canned plans, NOT model evidence
+```
+
+The gate is five real checks, in dependency order, each of which fails loudly
+rather than degrading quietly:
+
+| # | check | proves |
+|---|---|---|
+| 1 | `vitest` + `tsc --noEmit` | the privacy and policy invariants hold; no type lies |
+| 2 | server / providers / CORS | the wire contract, incl. real extension-origin preflights |
+| 3 | deployment contract | the container's config is one the server accepts |
+| 4 | live plan gate | a plan naming a non-existent mark is escalated **by the real endpoint** |
+| 5 | `wxt build` | it loads, with the permissions the code actually calls |
+
+Two checks exist specifically because a suite once lied. `check_plan_against_state`
+was unit-tested and then never called by any request path — check 4 exercises
+it over real HTTP so that cannot recur silently. And `VEIL_ALLOWED_ORIGINS`
+was baked into the Dockerfile as a wildcard the server now refuses, which
+docker-compose masked; check 3 reads the Dockerfile and fails on it.
+
+### The parts, individually
+
 ```bash
 # 1. bench harness — every number in this README
 ./.venv/Scripts/python.exe bench/gen_synthetic.py        # regenerate corpus
 ./.venv/Scripts/python.exe bench/test_contract.py       # wire-format check
 ./.venv/Scripts/python.exe bench/test_server.py         # 16 server checks
-./.venv/Scripts/python.exe bench/test_cors.py           # 9 CORS checks
-cd extension && npx vitest run && npx wxt build         # 203 tests, both targets
+./.venv/Scripts/python.exe bench/test_cors.py           # 12 CORS checks
+cd extension && npx vitest run && npx wxt build         # 263 tests, both targets
 
 # server
 ./.venv/Scripts/python.exe -m uvicorn server.app:app --port 8000
