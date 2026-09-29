@@ -158,11 +158,12 @@ def check_python(suite: str, label: str) -> bool:
 
 
 def check_server() -> bool:
-    head("2/6  Server, providers, CORS")
+    head("2/6  Server, providers, CORS, wire contract")
     a = check_python("test_server", "server suite")
     b = check_python("test_providers", "provider/session/privacy")
     c = check_python("test_cors", "CORS (real preflights)")
-    return a and b and c
+    d = check_python("test_contract", "wire contract")
+    return a and b and c and d
 
 
 def check_deploy() -> bool:
