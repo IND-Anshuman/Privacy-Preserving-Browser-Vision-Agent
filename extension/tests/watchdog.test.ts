@@ -67,15 +67,21 @@ describe('watchdog', () => {
     expect(onExpire).not.toHaveBeenCalled()
   })
 
-  it('is not reset by a duplicate begin for the same run', () => {
+  it('is not reset by a duplicate begin for the SAME stage', () => {
     const onExpire = vi.fn()
-    const wd = newWatchdog({ timeoutMs: 10_000, onExpire })
-    wd.begin('run-1', 'snapshot')
-    // The SW can receive a repeated stage message. Restarting the clock on
-    // every one would let a stalled run live forever, which is the bug.
-    vi.advanceTimersByTime(9_000)
-    wd.begin('run-1', 'redact')
-    vi.advanceTimersByTime(1_500)
+    // No flat override: this is testing the real per-stage table. 'send' gets
+    // 60s, so the assertions below are relative to that.
+    const wd = newWatchdog({ onExpire })
+    wd.begin('run-1', 'send')
+    // The SW can receive a repeated stage message for the stage a run is
+    // already in. Restarting the clock on each one would let a stalled run
+    // live forever, which is the bug.
+    for (let i = 0; i < 8; i++) {
+      vi.advanceTimersByTime(5_000)
+      wd.begin('run-1', 'send')
+    }
+    expect(onExpire).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(30_000)
     expect(onExpire).toHaveBeenCalledTimes(1)
   })
 

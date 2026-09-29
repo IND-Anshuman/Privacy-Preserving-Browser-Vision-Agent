@@ -578,6 +578,17 @@ open directly; `bench/l3_canvas.html` is self-contained.
 
 ## Honest failure notes
 
+- **A stalled run was blamed on the wrong stage.** The pipeline had only two
+  `stage()` calls (`snapshot`, `execute`), and the T1 path set
+  `run.stage = 'send'` as a raw assignment — so the watchdog was still timing
+  the snapshot when a ~13-19 s network turn ran inside it. A healthy run was
+  reported as stalling "while reading the page" and the message asserted MV3
+  worker recycling, which was not what happened. `stage()` is now the only way
+  a stage changes, and each stage is budgeted against its own measured cost
+  (snapshot 8 s, send 60 s). A third un-inspected return value went with it:
+  `callServer`'s `{ok:false}` was returned to nobody, so a failed turn was
+  only ever reported by the watchdog — this is the third time this shape
+  (a returned value nobody checks) caused a silent stall.
 - **`snapshot 2ms` is a FAILURE, not a fast success.** A real DOM walk of a
   page with fifty elements cannot take 2 ms; what takes 2 ms is
   `chrome.tabs.sendMessage` *rejecting*, because no content script is

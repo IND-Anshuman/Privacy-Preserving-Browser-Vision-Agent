@@ -37,7 +37,7 @@
  * resume after a restart is the larger fix and is not here.
  */
 
-export type RunStage = 'snapshot' | 'redact' | 'send' | 'execute' | 'done' | 'aborted'
+export type RunStage = 'snapshot' | 'capture' | 'redact' | 'send' | 'execute' | 'done' | 'aborted'
 
 /** Stages after which nothing more is coming. */
 const TERMINAL: ReadonlySet<string> = new Set(['done', 'aborted'])
@@ -53,7 +53,17 @@ export interface StalledRun {
 }
 
 export interface WatchdogOptions {
-  timeoutMs: number
+  /**
+   * Overrides EVERY per-stage budget with one flat deadline.
+   *
+   * Deliberately absent in production: the whole point of STAGE_TIMEOUT_MS is
+   * that a 13-19s network turn and a 12ms page walk do not deserve the same
+   * deadline, and passing a flat number here would silently flatten the table
+   * again — which is the bug this file was written to remove. It exists so
+   * tests can drive timeouts in milliseconds, and so a future config can force
+   * a strict overall cap if one is ever wanted.
+   */
+  timeoutMs?: number
   onExpire: (run: StalledRun) => void
 }
 
@@ -66,6 +76,49 @@ export interface WatchdogOptions {
  * generous, and a run still going at 45s is not slow — it is stuck.
  */
 export const DEFAULT_RUN_TIMEOUT_MS = 45_000
+
+/**
+ * Per-stage deadlines.
+ *
+ * ONE DEADLINE FOR THE WHOLE RUN IS THE WRONG SHAPE, and the trace below is
+ * what proved it. A user pasted:
+ *
+ *   [veil:sw] snapshot: 15 marks, 1 L0/L1 hits, opaque=0
+ *   [veil:sw] capture+redact 2ms
+ *   [veil:sw] snapshot 37ms
+ *   [veil:sw] run ... stalled in "snapshot" after 45s
+ *
+ * The snapshot finished in 37ms and capture/redact in 2ms, yet the stall was
+ * reported as being in "snapshot". The cause: `onRedactReady` sets
+ * `run.stage = 'send'` as a RAW ASSIGNMENT instead of calling `stage()`, and
+ * `stage()` is the only thing that re-arms the watchdog. So the timer was
+ * still counting from the snapshot while a ~13-19s network turn ran inside a
+ * 45s window that was never extended. The user was sent chasing MV3 worker
+ * recycling, which had nothing to do with it.
+ *
+ * So: every stage gets a deadline sized to what it actually does. The local
+ * page walk measured p50 12.67ms, the whole client scan 62.2ms — those get
+ * seconds, not a minute. The network turn measures p50 ~13s and p95 ~19s, so
+ * it gets the room it needs, and it gets a deadline of its own rather than
+ * inheriting one measured from the snapshot.
+ */
+export const STAGE_TIMEOUT_MS: Readonly<Record<string, number>> = Object.freeze({
+  /** Local DOM walk. Measured p50 12.67ms; even a huge page is well under 1s. */
+  snapshot: 8_000,
+  /** Frame capture + compositor setup. GPU-bound, no network. */
+  capture: 15_000,
+  /** L0/L1 + optional L2/L3. Warm L3 measured ~632ms; allow for model load. */
+  redact: 30_000,
+  /** The remote T1 turn. Measured p50 13.00s, p95 18.94s, one 74s stall. */
+  send: 60_000,
+  /** Local click/fill + effect verification. */
+  execute: 20_000,
+})
+
+/** The deadline for a stage, falling back to the run-wide budget. */
+export function stageTimeoutMs(stage: string): number {
+  return STAGE_TIMEOUT_MS[stage] ?? DEFAULT_RUN_TIMEOUT_MS
+}
 
 /**
  * One in-flight run at a time, which is all the panel allows (`runIntent`
@@ -89,16 +142,38 @@ export class RunWatchdog {
    */
   begin(runId: string, stage: string): void {
     if (this.current && this.current.runId === runId) {
+      // Same run, same stage: a repeat message. Do NOT restart the clock — a
+      // wedged run that keeps emitting would otherwise hold the panel
+      // hostage forever, reintroducing the hang this exists to prevent.
+      if (this.current.stage === stage) return
+      // Same run, ADVANCED stage. Re-arm, because the new stage is a different
+      // kind of work with a different budget. Not restarting here is what made
+      // the network turn inherit the snapshot's already-spent 45s.
       this.current.stage = stage
+      this.current.startedAt = Date.now()
+      this.arm(stage)
       return
     }
     this.clear()
     this.current = { runId, stage, startedAt: Date.now() }
+    this.arm(stage)
+  }
+
+  private arm(stage: string): void {
+    if (this.timer !== null) clearTimeout(this.timer)
+    // A flat override wins when given; otherwise the per-stage budget applies.
+    const budget = this.opts.timeoutMs ?? stageTimeoutMs(stage)
     this.timer = setTimeout(() => {
       const c = this.current
       this.clear()
-      if (c) this.opts.onExpire({ runId: c.runId, stage: c.stage, elapsedMs: Date.now() - c.startedAt })
-    }, this.opts.timeoutMs)
+      if (c) {
+        this.opts.onExpire({
+          runId: c.runId,
+          stage: c.stage,
+          elapsedMs: Date.now() - c.startedAt,
+        })
+      }
+    }, budget)
   }
 
   /** The run reached a terminal state; stop caring. */
@@ -140,8 +215,14 @@ export function describeRunError(run: StalledRun): string {
 
   return (
     `Veil stopped ${where} and did not finish (${Math.round(run.elapsedMs / 1000)}s). ` +
-    `The background worker is restarted by the browser when it goes idle, which ` +
-    `is the usual cause. Nothing was sent after that point. Press Reload to try again — ` +
-    `if a remote model is configured, expect this turn to take 10–20s.`
+    // This used to assert "the background worker is restarted by the browser
+    // when it goes idle, which is the usual cause". It was wrong: a user hit
+    // this with the worker alive and healthy, because the stage name was
+    // stale. Naming a cause we cannot observe sends the reader after the wrong
+    // problem — that cost one debugging round-trip on a real report.
+    `Nothing further was sent. The most common causes are the model taking ` +
+    `longer than its ${Math.round(stageTimeoutMs(run.stage) / 1000)}s budget for this ` +
+    `step, or the browser restarting the background worker while it was idle. ` +
+    `Press Reload to try again — with a remote model, expect 10–20s per turn.`
   )
 }

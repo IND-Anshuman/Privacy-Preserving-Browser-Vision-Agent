@@ -500,7 +500,6 @@ async function onSnapshotReady(msg: Extract<VeilMessage, { kind: 'snapshot:ready
   clearStageDeadline(msg.runId)
   run.screenState = ScreenStateSchema.parse(msg.screenState)
 
-  run.stage = 'redact'
   const t0 = now()
   log('sw', `run ${msg.runId} snapshot: ${msg.marks.length} marks, ${msg.rawDetections.length} L0/L1 hits, opaque=${msg.opaqueFrames?.length ?? 0}`, 'info')
   const res = await toOffscreen({
@@ -515,6 +514,31 @@ async function onSnapshotReady(msg: Extract<VeilMessage, { kind: 'snapshot:ready
     marks: msg.marks,
   })
   stage(run.runId, 'capture+redact', now() - t0)
+
+  // `runCapture` answers `{ok:false, aborted:true}` when the redaction gate
+  // could not verify coverage, and `toOffscreen` has no try/catch, so a
+  // missing offscreen document THROWS. Either way the return value used to be
+  // dropped on the floor and the run waited for a `redact:ready` that was
+  // never coming. This is the same defect as the un-checked `{blocked:true}`,
+  // one layer up, and it was equally silent.
+  if (isBlockedResult(res) || (res as { ok?: boolean })?.ok === false) {
+    const reason =
+      (res as { reason?: string; error?: string })?.reason ??
+      (res as { error?: string })?.error ??
+      'the redaction step did not complete'
+    run.stage = 'aborted'
+    watchdog.finish(msg.runId)
+    log('sw', `run ${msg.runId} capture/redact failed: ${reason}`, 'error')
+    flushLog()
+    sendToPanel({
+      kind: 'panel:error',
+      runId: msg.runId,
+      message:
+        `Veil stopped at the redaction step, so nothing was sent. (${reason}) ` +
+        `A frame that cannot be verified is never sent — that is the point of the gate.`,
+    })
+    return { ok: false, error: reason }
+  }
   return res
 }
 
@@ -541,7 +565,11 @@ async function onRedactReady(msg: Extract<VeilMessage, { kind: 'redact:ready' }>
     return { ok: false, error: 'no screen state: snapshot stage did not complete' }
   }
 
-  run.stage = 'send'
+  // Was a raw `run.stage = 'send'`. `stage()` is what re-arms the watchdog, so
+  // the ~13-19s network turn was running inside the snapshot's already-partly
+  // spent 45s budget and got reported as a "snapshot" stall — sending the user
+  // after worker recycling instead of after the actual cause.
+  stage(run.runId, 'send', 0)
   const t0 = now()
 
   // 2. Tier-0 short circuit: a known local intent needs no network at all.
@@ -596,7 +624,7 @@ async function onRedactReady(msg: Extract<VeilMessage, { kind: 'redact:ready' }>
         source: 'unavailable',
       })
     }
-    run.stage = 'done'
+    stage(run.runId, 'done', now() - t0)
     return { ok: true, tier: 'T0' }
   }
 
@@ -679,7 +707,25 @@ async function onRedactReady(msg: Extract<VeilMessage, { kind: 'redact:ready' }>
     // server to name it; until it does, acting in the main document is the
     // scoped-and-safe choice rather than a broadcast.
     await executePlan(run.runId, result.plan, 0)
+    stage(run.runId, 'done', 0)
+    return result
   }
+
+  // A failed turn used to be returned and dropped: `callServer` answers
+  // `{ok:false, error}` on a non-2xx, a parse failure, an invalid plan, or an
+  // AbortController timeout, and none of those reached the panel. The run then
+  // sat until the watchdog fired and blamed a stage that was already past.
+  stage(run.runId, 'aborted', 0)
+  log('sw', `run ${run.runId} server turn failed: ${result.error ?? 'unknown error'}`, 'error')
+  flushLog()
+  sendToPanel({
+    kind: 'panel:error',
+    runId: run.runId,
+    message:
+      `Veil asked the model and got no usable answer (${result.error ?? 'unknown error'}). ` +
+      `The page was read and redacted, but no action was taken. ` +
+      `Check the server is running, then press Reload.`,
+  })
   return result
 }
 
@@ -947,7 +993,7 @@ async function callServer(
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'invalid plan' }
     }
-    run.stage = 'execute'
+    stage(run.runId, 'execute', 0)
     log('sw', `run ${run.runId} plan: ${plan.steps.length} steps confidence=${plan.confidence}`, 'info')
     flushLog()
     sendToPanel({ kind: 'panel:plan', runId: run.runId, plan })
