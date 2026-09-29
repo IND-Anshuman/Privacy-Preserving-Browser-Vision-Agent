@@ -93,12 +93,61 @@ function send(msg: VeilMessage): void {
   void chrome.runtime.sendMessage(msg).catch(() => undefined)
 }
 
+/**
+ * The panel's own deadline for a run it started.
+ *
+ * The service worker has a watchdog, but after a WORKER RESTART there is no
+ * run in the worker at all — the in-memory state died with it — so its timer
+ * died too. The panel is the only surviving party that knows a run was
+ * requested, so the panel has to notice the absence itself. Without this the
+ * spinner runs until the panel is closed, which is the reported symptom.
+ */
+let runDeadline: ReturnType<typeof setTimeout> | null = null
+
+function armDeadline(): void {
+  disarmDeadline()
+  runDeadline = setTimeout(() => {
+    runDeadline = null
+    if (!state.busy) return
+    state.busy = false
+    const where = state.stages.length ? state.stages[state.stages.length - 1]!.name : 'starting'
+    push('warn', `No response after ${Math.round(PANEL_RUN_TIMEOUT_MS / 1000)}s (last stage: ${where}). The background worker is probably being recycled by the browser. Press Reload to try again.`)
+    render()
+  }, PANEL_RUN_TIMEOUT_MS)
+}
+
+function disarmDeadline(): void {
+  if (runDeadline !== null) {
+    clearTimeout(runDeadline)
+    runDeadline = null
+  }
+}
+
+/**
+ * Clear a run the panel believes is in flight.
+ *
+ * `busy` is cleared by exactly four inbound messages, and the most common way
+ * to lose all four is the background worker being recycled mid-run. When that
+ * happens the panel is stuck with no way back: the Run button is disabled
+ * because `busy` is true, and nothing will ever arrive to unset it. Reload is
+ * therefore the user's only escape, so it has to be able to clear `busy`
+ * itself — and it says so, rather than leaving the user guessing why a stuck
+ * panel came back to life.
+ */
+function clearStuckRun(): void {
+  if (state.busy) {
+    push('warn', 'Previous run never reported back — the browser likely recycled the background worker. Starting fresh.')
+    state.busy = false
+  }
+}
+
 function runIntent(intent: string, tier: 'T0' | 'T1'): void {
   if (!intent || state.busy) return
   state.steps = []
   state.stages = []
   state.confirm = null
   state.busy = true
+  armDeadline()
   push('user', intent)
   send({ kind: 'panel:run', intent, tier })
   render()
@@ -167,17 +216,20 @@ function apply(msg: VeilMessage): void {
 
     case 'redact:aborted':
       state.aborts += 1
+      disarmDeadline()
       state.busy = false
       push('warn', 'Nothing was sent. This page looked unsafe to send, so I stopped before anything left the device.')
       break
 
     case 'panel:plan':
+      disarmDeadline()
       state.plan = msg.plan
       state.busy = false
       adoptPlan(msg.plan)
       break
 
     case 'panel:answer':
+      disarmDeadline()
       // The agent's reply. `tier` distinguishes a local answer, a normal one,
       // and a request for confirmation.
       if (msg.tier === 'confirm') {
@@ -211,6 +263,7 @@ function apply(msg: VeilMessage): void {
     }
 
     case 'panel:error':
+      disarmDeadline()
       state.busy = false
       push('warn', msg.message || 'Something went wrong and I stopped.')
       break
@@ -313,6 +366,17 @@ function push(who: Turn['who'], text: string): void {
 /* ------------------------------------------------------------------ *
  *  Tabs
  * ------------------------------------------------------------------ */
+
+/**
+ * How long the panel waits before declaring a run lost.
+ *
+ * From measurement, not taste: the network turn measures p50 ~13s and p95 ~19s
+ * against a remote model, and the browser recycles an idle service worker at
+ * ~30s. 75s is comfortably past the worst real turn and comfortably before a
+ * user gives up — and it is a backstop, not the normal path. A run that
+ * finishes in 13s never comes near it.
+ */
+const PANEL_RUN_TIMEOUT_MS = 75_000
 
 let active: 'agent' | 'privacy' | 'timeline' = 'agent'
 
@@ -750,6 +814,7 @@ async function reloadVeil(): Promise<void> {
       return
     }
 
+    clearStuckRun()
     state.manifest = null
     state.plan = null
     state.bytesOut = 0
@@ -771,7 +836,12 @@ async function reloadVeil(): Promise<void> {
     // short-circuits before the network call. That gives a complete local
     // re-read with nothing sent — T1 would answer the question over the
     // network, which a reload should never do unasked.
-    send({ kind: 'panel:run', intent: 'Describe what is on this page.', tier: 'T0' })
+    // This used to call `send({kind:'panel:run', ...})` directly. That
+    // bypassed runIntent(), which is where `busy` is set and where the
+    // transcript line is pushed — so a reload produced no visible change
+    // whatsoever and read as a dead button. Going through runIntent() is what
+    // makes the button show that it did something.
+    runIntent('Describe what is on this page.', 'T0')
   } finally {
     btn?.removeAttribute('aria-busy')
   }
@@ -779,6 +849,73 @@ async function reloadVeil(): Promise<void> {
 
 $('reload')?.addEventListener('click', () => {
   void reloadVeil()
+})
+
+/* ------------------------------------------------------------------ *
+ *  Activity log
+ * ------------------------------------------------------------------ */
+
+/**
+ * Read the log the background worker persisted.
+ *
+ * Read from chrome.storage.session rather than from the worker, because the
+ * worker is frequently DEAD by the time a user goes looking — that is the
+ * whole reason the log is persisted. Asking a dead worker for its console is
+ * how you get an empty console.
+ */
+async function refreshLog(): Promise<void> {
+  const box = $('logview')
+  if (!box) return
+  let entries: { t: number; channel: string; level: string; text: string }[] = []
+  try {
+    const got = await chrome.storage.session.get('veilLog')
+    const raw = got['veilLog']
+    if (Array.isArray(raw)) entries = raw
+  } catch {
+    entries = []
+  }
+  box.innerHTML = ''
+  if (entries.length === 0) {
+    const e = document.createElement('div')
+    e.className = 'log-empty'
+    e.textContent = 'Nothing logged yet. Ask the extension something, then refresh.'
+    box.appendChild(e)
+    return
+  }
+  for (const entry of entries) {
+    const row = document.createElement('div')
+    row.className = `log-row log-${entry.level}`
+    const at = new Date(entry.t)
+    row.textContent =
+      `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}:` +
+      `${String(at.getSeconds()).padStart(2, '0')}  ${entry.channel.padEnd(9)} ${entry.text}`
+    box.appendChild(row)
+  }
+  box.scrollTop = box.scrollHeight
+}
+
+function toggleLog(): void {
+  const card = $('logs-card')
+  if (!card) return
+  card.hidden = !card.hidden
+  if (!card.hidden) void refreshLog()
+}
+
+$('logs')?.addEventListener('click', toggleLog)
+$('log-refresh')?.addEventListener('click', () => void refreshLog())
+$('log-clear')?.addEventListener('click', () => {
+  void chrome.storage.session.remove('veilLog').then(() => refreshLog())
+})
+$('log-copy')?.addEventListener('click', () => {
+  const box = $('logview')
+  if (!box) return
+  const text = Array.from(box.children)
+    .map((n) => (n as HTMLElement).textContent ?? '')
+    .join('\n')
+  void navigator.clipboard.writeText(text).then(
+    () => push('note', 'Log copied to the clipboard.'),
+    () => push('warn', 'Could not reach the clipboard — select the text instead.'),
+  )
 })
 
 render()

@@ -15,6 +15,8 @@ import { parseMessage } from '@/lib/messages'
 import { parseActionPlan, parseManifest, ScreenStateSchema, SCHEMA_VERSION, type ActionPlan, type ScreenNode } from '@/lib/schema'
 import { runPlan, MAX_STEPS_PER_PLAN, type PlanStep, type PlanRunResult, type StepDriver, type StepResult } from '@/lib/execution'
 import { parsePlanStream } from '@/lib/sse'
+import { LogRing, createLogger, persistRing, restoreRing, type LogChannel } from '@/lib/logging'
+import { newWatchdog, describeRunError, DEFAULT_RUN_TIMEOUT_MS, isTerminalStage } from '@/lib/watchdog'
 
 /* ------------------------------------------------------------------ *
  *  Run state. Deliberately small and serializable — it is the ONLY
@@ -55,6 +57,38 @@ interface RunState {
 }
 
 const runs = new Map<string, RunState>()
+
+/**
+ * A log that outlives the worker that wrote it.
+ *
+ * The console is not enough here, and that is the whole point: the most
+ * common failure in this extension is the MV3 worker being TERMINATED
+ * MID-RUN, which takes the console buffer with it. A user reporting "nothing
+ * appears in the console" was reporting this correctly — there was nothing to
+ * see, because the thing that would have logged had been killed.
+ *
+ * So entries go into a bounded ring and are mirrored into
+ * chrome.storage.session, which outlives the worker. The panel reads them
+ * back. `console.*` still gets every line, for a developer with devtools open.
+ */
+const logRing = new LogRing()
+const log = createLogger(logRing)
+
+/** Persist after every batch of lines, not on a timer. */
+function flushLog(): void {
+  void persistRing(logRing)
+}
+
+const watchdog = newWatchdog({
+  timeoutMs: DEFAULT_RUN_TIMEOUT_MS,
+  onExpire: (stalled) => {
+    // The run object is gone (that is WHY we are here), so this cannot mark
+    // it aborted. It only has to make sure the panel is told.
+    log('sw', `run ${stalled.runId} stalled in "${stalled.stage}" after ${Math.round(stalled.elapsedMs / 1000)}s`, 'error')
+    sendToPanel({ kind: 'panel:error', runId: stalled.runId, message: describeRunError(stalled) })
+    flushLog()
+  },
+})
 const SERVER_DEFAULT = 'http://127.0.0.1:8000'
 
 /**
@@ -99,6 +133,15 @@ async function loadConfig(): Promise<void> {
  * ------------------------------------------------------------------ */
 
 function start(): void {
+  // A fresh worker after a restart is the single most confusing thing a user
+  // can hit, so say so. Without this line the console looks empty precisely
+  // when something went wrong, which is backwards.
+  void (async () => {
+    await restoreRing(logRing)
+    log('sw', 'background worker started' + (runs.size ? '' : ' (no run in progress — the previous worker was recycled)'), 'info')
+    flushLog()
+  })()
+
   chrome.runtime.onInstalled.addListener(() => {
     void loadConfig()
     void chrome.storage.local.get(['serverOrigin']).then((g) => {
@@ -120,6 +163,8 @@ function start(): void {
       const runId = 'runId' in msg && typeof msg.runId === 'string' ? msg.runId : 'unknown'
       const run = runs.get(runId)
       if (run && run.stage !== 'aborted') run.stage = 'aborted'
+      log('sw', `run ${runId} failed in "${run?.stage ?? 'unknown'}": ${message}`, 'error')
+      flushLog()
       sendToPanel({ kind: 'panel:error', runId, message })
       sendResponse({ ok: false, error: message })
     })
@@ -143,6 +188,11 @@ const now = () => performance.now()
 const newId = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
 function sendToPanel(msg: VeilMessage): void {
+  // A terminal message is the ONLY thing that un-sticks the panel, so ending a
+  // run is the one place the watchdog must always be stopped.
+  if (msg.kind === 'panel:error' || msg.kind === 'panel:plan' || msg.kind === 'panel:answer') {
+    watchdog.finish(msg.runId)
+  }
   void chrome.runtime.sendMessage(msg).catch(() => {
     // The panel may not be open. Swallowing this is correct: a missing
     // panel must never fail a run.
@@ -150,7 +200,11 @@ function sendToPanel(msg: VeilMessage): void {
 }
 
 function stage(runId: string, name: string, ms: number): void {
+  if (isTerminalStage(name)) watchdog.finish(runId)
+  else watchdog.begin(runId, name)
+  log('sw', `${name} ${ms.toFixed(0)}ms`, 'info')
   sendToPanel({ kind: 'panel:stage', runId, stage: name, ms })
+  flushLog()
 }
 
 async function activeTabId(): Promise<number> {
@@ -340,6 +394,8 @@ async function startRun(intent: string, tier: 'T0' | 'T1' | 'T2', fresh = false)
   }
   runs.set(runId, run)
   activeSession = { sessionId, turn }
+  watchdog.begin(runId, 'snapshot')
+  log('sw', `run ${runId} start tier=${tier} session=${sessionId} turn=${turn} intent="${intent.slice(0, 80)}"`, 'info')
 
   const tabId = await activeTabId()
   await ensureOffscreen(tabId)
@@ -369,6 +425,7 @@ async function onSnapshotReady(msg: Extract<VeilMessage, { kind: 'snapshot:ready
 
   run.stage = 'redact'
   const t0 = now()
+  log('sw', `run ${msg.runId} snapshot: ${msg.marks.length} marks, ${msg.rawDetections.length} L0/L1 hits, opaque=${msg.opaqueFrames?.length ?? 0}`, 'info')
   const res = await toOffscreen({
     kind: 'offscreen:capture',
     runId: run.runId,
@@ -814,6 +871,8 @@ async function callServer(
       return { ok: false, error: e instanceof Error ? e.message : 'invalid plan' }
     }
     run.stage = 'execute'
+    log('sw', `run ${run.runId} plan: ${plan.steps.length} steps confidence=${plan.confidence}`, 'info')
+    flushLog()
     sendToPanel({ kind: 'panel:plan', runId: run.runId, plan })
     return { ok: true, plan }
   } catch (e) {

@@ -442,7 +442,28 @@
       @media (prefers-reduced-motion: reduce) {
         *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
       }
-    </style>
+    
+  /* ══ Activity log ═══════════════════════════════════════════════════
+     Fixed height with its own scroll: a log that grows with its content
+     pushes the send box off the bottom of a 360px panel, which is the
+     width this was last checked at. */
+  .log {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.45;
+    max-height: 220px;
+    overflow-y: auto;
+    background: rgba(127, 127, 127, 0.09);
+    border-radius: 8px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log-row { padding: 1px 0; }
+  .log-warn { color: #d9a441; }
+  .log-error { color: #e2685f; }
+  .log-empty { opacity: 0.65; font-style: italic; }
+</style>
   </head>
   <body>
     <header>
@@ -456,6 +477,17 @@
         <p id="tagline">Your screen is read on this device. Nothing sensitive leaves.</p>
       </div>
       <span class="conn" id="conn" data-state="down" title="Checking the assistant…">checking</span>
+      <button
+        id="logs"
+        class="icon-btn"
+        type="button"
+        title="Show the activity log"
+        aria-label="Show the activity log"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </svg>
+      </button>
       <button
         id="reload"
         class="icon-btn"
@@ -496,6 +528,22 @@
 
         <div id="pending"></div>
         <div class="thread" id="thread"></div>
+
+        <!-- ══ Activity log ══════════════════════════════════════════════
+             The service-worker console is not a reliable place to look: the
+             worker is RECYCLED mid-run in the most common failure mode, and
+             that takes the console buffer with it. So the log is kept in
+             chrome.storage.session and read back here, which survives.
+             Values are scrubbed on the way in — see lib/logging.ts. -->
+        <div class="card" id="logs-card" hidden>
+          <h2>Activity</h2>
+          <div class="log" id="logview" role="log" aria-live="polite"></div>
+          <div class="row">
+            <button id="log-refresh" class="ghost">Refresh</button>
+            <button id="log-copy" class="ghost">Copy</button>
+            <button id="log-clear" class="ghost">Clear</button>
+          </div>
+        </div>
 
         <div class="card" id="chips-card" hidden>
           <h2>Try</h2>

@@ -587,6 +587,28 @@ open directly; `bench/l3_canvas.html` is self-contained.
   because its fixtures had been written in the server's own spelling — it was
   testing the server against itself. `bench/test_contract.py` now derives the
   fixture from the client's Zod schema and fails on any drift.
+- **The panel could hang forever with no error.** `runs` is a plain `Map` in
+  the service worker, and MV3 recycles an idle worker at ~30s. A T1 turn
+  measures p50 ~13s and p95 ~19s, so the pipeline outlives the worker holding
+  it. On restart the run is gone, so none of the four terminal messages
+  (`panel:plan` / `panel:answer` / `panel:error` / `redact:aborted`) is ever
+  sent — and those four are the only things that clear the panel's `busy`
+  flag. The spinner ran until the panel was closed. Now: a service-worker
+  watchdog, a panel-side deadline (the only party that survives a restart can
+  notice the absence), and a Reload button that clears a stuck run and says
+  why. It still does not *resume* an orphaned run — that state is gone.
+- **The debug console was empty, and adding logging would not have fixed it.**
+  282 of the project's `console.*` calls are in bench scripts; the runtime
+  files logged essentially nothing. But the deeper problem is that the console
+  dies with the worker, which is exactly what the user was trying to
+  investigate. The log is now a bounded ring persisted to
+  `chrome.storage.session` and rendered in the panel under the Activity
+  button. Every entry is scrubbed on the way IN — a log is a place secrets
+  leak, and the project has a key in `.env` and a bearer header in flight.
+- **The Reload button did nothing visible.** It sent `panel:run` directly
+  instead of going through `runIntent()`, so it never set `busy`, never pushed
+  a transcript line, and produced no feedback at all. It now goes through
+  `runIntent()` and can break a stuck run.
 - **A safety rejection was being read as "let it through."** `_apply_escalation_gate`
   caught every parse exception and returned `None`, which the caller reads as "no
   replacement needed". But a `ValidationError` from the destructive-verb check
